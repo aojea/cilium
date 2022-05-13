@@ -242,6 +242,9 @@ const (
 	// EnableRedirectService enables google redirect service for the host
 	EnableRedirectService = "enable-redirect-service"
 
+	// EnableFQDNNetworkPolicy enables google fqdn network policy
+	EnableFQDNNetworkPolicy = "enable-fqdn-network-policy"
+
 	// EnableTrafficSteering enables google traffic steering for the host
 	EnableTrafficSteering = "enable-traffic-steering"
 
@@ -1986,6 +1989,9 @@ type DaemonConfig struct {
 	// EnableRedirectService enables google redirect service for the host
 	EnableRedirectService bool
 
+	// EnableFQDNNetworkPolicy enables google fqdn network policy
+	EnableFQDNNetworkPolicy bool
+
 	// EnableTrafficSteering enables google traffic steering for the host
 	EnableTrafficSteering bool
 
@@ -2931,6 +2937,7 @@ func (c *DaemonConfig) Populate() {
 	c.CgroupPathMKE = viper.GetString(CgroupPathMKE)
 	c.EnableHostFirewall = viper.GetBool(EnableHostFirewall)
 	c.EnableRedirectService = viper.GetBool(EnableRedirectService)
+	c.EnableFQDNNetworkPolicy = viper.GetBool(EnableFQDNNetworkPolicy)
 	c.EnableTrafficSteering = viper.GetBool(EnableTrafficSteering)
 	c.EnableLocalRedirectPolicy = viper.GetBool(EnableLocalRedirectPolicy)
 	c.EnableGoogleMultiNIC = viper.GetBool(EnableGoogleMultiNIC)
