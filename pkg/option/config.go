@@ -1962,9 +1962,9 @@ type DaemonConfig struct {
 	LoadBalancerRSSv6CIDR string
 	LoadBalancerRSSv6     net.IPNet
 
-	// LoadBalancerPMTUDiscovery indicates whether LB should reply with ICMP
-	// frag needed messages to client (when needed)
-	LoadBalancerPMTUDiscovery bool
+	// EnablePMTUDiscovery indicates whether to send ICMP fragmentation-needed
+	// replies to the client (when needed).
+	EnablePMTUDiscovery bool
 
 	// Maglev backend table size (M) per service. Must be prime number.
 	MaglevTableSize int
@@ -3108,6 +3108,7 @@ func (c *DaemonConfig) Populate() {
 	c.EnableIPv6Masquerade = viper.GetBool(EnableIPv6Masquerade) && c.EnableIPv6
 	c.EnableBPFMasquerade = viper.GetBool(EnableBPFMasquerade)
 	c.DeriveMasqIPAddrFromDevice = viper.GetString(DeriveMasqIPAddrFromDevice)
+	c.EnablePMTUDiscovery = viper.GetBool(EnablePMTUDiscovery)
 
 	c.populateLoadBalancerSettings()
 	c.populateDevices()
