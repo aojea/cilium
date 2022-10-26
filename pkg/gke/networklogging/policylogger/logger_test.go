@@ -329,11 +329,11 @@ func TestLoggerQuickStateChange(t *testing.T) {
 		spec := v1alpha1.NetworkLoggingSpec{}
 		spec.Cluster.Allow.Log = true
 		if update := logger.UpdateLoggingSpec(&spec); !update {
-			t.Errorf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
+			t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
 		}
 		spec.Cluster.Allow.Log = false
 		if update := logger.UpdateLoggingSpec(&spec); !update {
-			t.Errorf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
+			t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
 		}
 		retry++
 	}
@@ -356,7 +356,7 @@ func TestLogger(t *testing.T) {
 	}
 
 	if err, cb := logger.Start(); err != nil {
-		t.Errorf("logger.Start() = (_, %v), want (_, nil)", err)
+		t.Fatalf("logger.Start() = (_, %v), want (_, nil)", err)
 	} else if cb != nil {
 		cb()
 	}
@@ -365,14 +365,14 @@ func TestLogger(t *testing.T) {
 	// Start from log disabled with should be the default state.
 	spec := v1alpha1.NetworkLoggingSpec{}
 	if update := logger.UpdateLoggingSpec(&spec); update {
-		t.Errorf("UpdateLoggingSpec(%v) = (%v), want false", spec, update)
+		t.Fatalf("UpdateLoggingSpec(%v) = (%v), want false", spec, update)
 	}
 
 	// Test updating configuration to log allow traffic. Verify that deny log will not be
 	// logged.
 	spec.Cluster.Allow.Log = true
 	if update := logger.UpdateLoggingSpec(&spec); !update {
-		t.Errorf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
+		t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
 	}
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
@@ -385,7 +385,7 @@ func TestLogger(t *testing.T) {
 	spec.Cluster.Allow.Log = true
 	spec.Cluster.Deny.Log = true
 	if update := logger.UpdateLoggingSpec(&spec); !update {
-		t.Errorf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
+		t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
 	}
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
@@ -395,7 +395,7 @@ func TestLogger(t *testing.T) {
 	spec.Cluster.Allow.Log = false
 	spec.Cluster.Deny.Log = true
 	if update := logger.UpdateLoggingSpec(&spec); !update {
-		t.Errorf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
+		t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
 	}
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
@@ -403,7 +403,7 @@ func TestLogger(t *testing.T) {
 	retryCheckFileContent(t, path, want, maxRetry)
 
 	if update := logger.UpdateLoggingSpec(nil); !update {
-		t.Errorf("UpdateLoggingSpec(nil) = %v, want true", update)
+		t.Fatalf("UpdateLoggingSpec(nil) = %v, want true", update)
 	}
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
@@ -432,7 +432,7 @@ func retryCheckFileContent(t *testing.T, path string, want string, maxRetry int)
 		err = check(path, want)
 	}
 	if err != nil {
-		t.Errorf("retryCheckFileContent() = %v, want nil", err)
+		t.Fatalf("retryCheckFileContent() = %v, want nil", err)
 	}
 }
 
@@ -452,7 +452,7 @@ func TestDenyLogAggregation(t *testing.T) {
 	}
 
 	if err, cb := logger.Start(); err != nil {
-		t.Errorf("logger.Start() = (_, %v), want (_, nil)", err)
+		t.Fatalf("logger.Start() = (_, %v), want (_, nil)", err)
 	} else if cb != nil {
 		cb()
 	}
@@ -461,7 +461,7 @@ func TestDenyLogAggregation(t *testing.T) {
 	spec := v1alpha1.NetworkLoggingSpec{}
 	spec.Cluster.Deny.Log = true
 	if update := logger.UpdateLoggingSpec(&spec); !update {
-		t.Errorf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
+		t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
 	}
 	path := logger.cfg.logFilePath + "/" + logger.cfg.logFileName
 	observer.OnDecodedFlow(context.Background(), allowFlow)
@@ -492,7 +492,7 @@ func TestLogDelegate(t *testing.T) {
 		configFilePath:   configFilePath,
 	}
 	if err, cb := logger.Start(); err != nil {
-		t.Errorf("logger.Start() = (_, %v), want (_, nil)", err)
+		t.Fatalf("logger.Start() = (_, %v), want (_, nil)", err)
 	} else if cb != nil {
 		cb()
 	}
@@ -517,7 +517,7 @@ func TestLogDelegate(t *testing.T) {
 	spec.Cluster.Deny.Log = true
 	spec.Cluster.Deny.Delegate = true
 	if update := logger.UpdateLoggingSpec(&spec); !update {
-		t.Errorf("UpdateLoggingSpec(%v) =  %v, want true", spec, update)
+		t.Fatalf("UpdateLoggingSpec(%v) =  %v, want true", spec, update)
 	}
 	path := logger.cfg.logFilePath + "/" + logger.cfg.logFileName
 	observer.OnDecodedFlow(context.Background(), allowFlow)
