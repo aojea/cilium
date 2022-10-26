@@ -49,10 +49,10 @@ const (
 	maxRetry = 5
 
 	// allowLog is the expected policy log for the allowFlow
-	allowLog = `{"connection":{"src_ip":"10.84.1.7","dest_ip":"10.84.0.11","src_port":55644,"dest_port":8080,"protocol":"tcp","direction":"ingress"},"disposition":"allow","policies":[{"kind":"NetworkPolicy","name":"allow-all","namespace":"default"}],"src":{"pod_name":"client-allow-7b78d7c957-zkn54","workload_kind":"ReplicaSet","workload_name":"client-allow-7b78d7c957","pod_namespace":"default","namespace":"default"},"dest":{"pod_name":"test-service-745c798fc9-hzpxt","workload_kind":"ReplicaSet","workload_name":"test-service-745c798fc9","pod_namespace":"default","namespace":"default"},"count":1,"timestamp":"2020-06-13T21:29:31.445836587Z"}`
+	allowLog = `{"connection":{"src_ip":"10.84.1.7","dest_ip":"10.84.0.11","src_port":55644,"dest_port":8080,"protocol":"tcp","direction":"ingress"},"disposition":"allow","policies":[{"kind":"NetworkPolicy","name":"allow-all","namespace":"default"}],"src":{"pod_name":"client-allow-7b78d7c957-zkn54","workload_kind":"ReplicaSet","workload_name":"client-allow-7b78d7c957","pod_namespace":"default","namespace":"default"},"dest":{"pod_name":"test-service-745c798fc9-hzpxt","workload_kind":"ReplicaSet","workload_name":"test-service-745c798fc9","pod_namespace":"default","namespace":"default"},"count":1,"timestamp":"2020-06-13T21:29:31.445836587Z"}` + "\n"
 
 	// denyLog is the expected policy log for the denyFlow
-	denyLog = `{"connection":{"src_ip":"10.84.1.8","dest_ip":"10.84.0.11","src_port":45084,"dest_port":8080,"protocol":"tcp","direction":"ingress"},"disposition":"deny","src":{"pod_name":"client-deny-5689846f5b-cqqsj","workload_kind":"ReplicaSet","workload_name":"client-deny-5689846f5b","pod_namespace":"default","namespace":"default"},"dest":{"pod_name":"test-service-745c798fc9-hzpxt","workload_kind":"ReplicaSet","workload_name":"test-service-745c798fc9","pod_namespace":"default","namespace":"default"},"count":1,"timestamp":"2020-06-13T21:30:22.292379064Z"}`
+	denyLog = `{"connection":{"src_ip":"10.84.1.8","dest_ip":"10.84.0.11","src_port":45084,"dest_port":8080,"protocol":"tcp","direction":"ingress"},"disposition":"deny","src":{"pod_name":"client-deny-5689846f5b-cqqsj","workload_kind":"ReplicaSet","workload_name":"client-deny-5689846f5b","pod_namespace":"default","namespace":"default"},"dest":{"pod_name":"test-service-745c798fc9-hzpxt","workload_kind":"ReplicaSet","workload_name":"test-service-745c798fc9","pod_namespace":"default","namespace":"default"},"count":1,"timestamp":"2020-06-13T21:30:22.292379064Z"}` + "\n"
 )
 
 var (
@@ -376,7 +376,7 @@ func TestLogger(t *testing.T) {
 	}
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
-	want := allowLog + "\n"
+	want := allowLog
 	fp := path.Join(logger.cfg.logFilePath, logger.cfg.logFileName)
 	retryCheckFileContent(t, fp, want, maxRetry)
 
@@ -389,7 +389,7 @@ func TestLogger(t *testing.T) {
 	}
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
-	want = want + allowLog + "\n" + denyLog + "\n"
+	want = want + allowLog + denyLog
 	retryCheckFileContent(t, fp, want, maxRetry)
 
 	spec.Cluster.Allow.Log = false
@@ -399,7 +399,7 @@ func TestLogger(t *testing.T) {
 	}
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
-	want = want + denyLog + "\n"
+	want = want + denyLog
 	retryCheckFileContent(t, fp, want, maxRetry)
 
 	if update := logger.UpdateLoggingSpec(nil); !update {
@@ -471,7 +471,6 @@ func TestDenyLogAggregation(t *testing.T) {
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	want := strings.Replace(denyLog, `"count":1`, `"count":4`, 1)
-	want = want + "\n"
 	retryCheckFileContent(t, fp, want, maxRetry)
 }
 
@@ -522,7 +521,7 @@ func TestLogDelegate(t *testing.T) {
 	fp := path.Join(logger.cfg.logFilePath, logger.cfg.logFileName)
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
-	want := allowLog + "\n" + denyLog + "\n"
+	want := allowLog + denyLog
 	retryCheckFileContent(t, fp, want, maxRetry)
 
 	// Modify the annotation to false, no new log will be output now.
