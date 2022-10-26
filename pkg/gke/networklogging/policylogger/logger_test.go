@@ -377,8 +377,8 @@ func TestLogger(t *testing.T) {
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	want := allowLog + "\n"
-	path := logger.cfg.logFilePath + "/" + logger.cfg.logFileName
-	retryCheckFileContent(t, path, want, maxRetry)
+	fp := path.Join(logger.cfg.logFilePath, logger.cfg.logFileName)
+	retryCheckFileContent(t, fp, want, maxRetry)
 
 	// Test updating configuration to log both allowed and denied traffic.
 	// Verify that both allow and deny log will not be logged.
@@ -390,7 +390,7 @@ func TestLogger(t *testing.T) {
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	want = want + allowLog + "\n" + denyLog + "\n"
-	retryCheckFileContent(t, path, want, maxRetry)
+	retryCheckFileContent(t, fp, want, maxRetry)
 
 	spec.Cluster.Allow.Log = false
 	spec.Cluster.Deny.Log = true
@@ -400,36 +400,36 @@ func TestLogger(t *testing.T) {
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	want = want + denyLog + "\n"
-	retryCheckFileContent(t, path, want, maxRetry)
+	retryCheckFileContent(t, fp, want, maxRetry)
 
 	if update := logger.UpdateLoggingSpec(nil); !update {
 		t.Fatalf("UpdateLoggingSpec(nil) = %v, want true", update)
 	}
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
-	retryCheckFileContent(t, path, want, maxRetry)
+	retryCheckFileContent(t, fp, want, maxRetry)
 }
 
-func retryCheckFileContent(t *testing.T, path string, want string, maxRetry int) {
+func retryCheckFileContent(t *testing.T, fp string, want string, maxRetry int) {
 	t.Helper()
 	check := func(path, want string) error {
-		if _, err := os.Stat(path); err != nil {
+		if _, err := os.Stat(fp); err != nil {
 			return fmt.Errorf("fail to stat file: %v", err)
 		}
 
-		if b, err := ioutil.ReadFile(path); err != nil {
+		if b, err := ioutil.ReadFile(fp); err != nil {
 			return fmt.Errorf("Readfile() = (_, %v), want (%s, nil)", err, want)
 		} else if !reflect.DeepEqual(b, []byte(want)) {
 			return fmt.Errorf("ReadFile() = (%s, nil), want (%s, nil)", string(b), want)
 		}
 		return nil
 	}
-	err := check(path, want)
+	err := check(fp, want)
 	retry := 0
 	for err != nil && retry < maxRetry {
 		time.Sleep(2 * time.Second)
 		retry++
-		err = check(path, want)
+		err = check(fp, want)
 	}
 	if err != nil {
 		t.Fatalf("retryCheckFileContent() = %v, want nil", err)
@@ -463,7 +463,7 @@ func TestDenyLogAggregation(t *testing.T) {
 	if update := logger.UpdateLoggingSpec(&spec); !update {
 		t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
 	}
-	path := logger.cfg.logFilePath + "/" + logger.cfg.logFileName
+	fp := path.Join(logger.cfg.logFilePath, logger.cfg.logFileName)
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
@@ -472,7 +472,7 @@ func TestDenyLogAggregation(t *testing.T) {
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	want := strings.Replace(denyLog, `"count":1`, `"count":4`, 1)
 	want = want + "\n"
-	retryCheckFileContent(t, path, want, maxRetry)
+	retryCheckFileContent(t, fp, want, maxRetry)
 }
 
 // TestLogDelegate tests the log delegate mode.
@@ -519,11 +519,11 @@ func TestLogDelegate(t *testing.T) {
 	if update := logger.UpdateLoggingSpec(&spec); !update {
 		t.Fatalf("UpdateLoggingSpec(%v) =  %v, want true", spec, update)
 	}
-	path := logger.cfg.logFilePath + "/" + logger.cfg.logFileName
+	fp := path.Join(logger.cfg.logFilePath, logger.cfg.logFileName)
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	want := allowLog + "\n" + denyLog + "\n"
-	retryCheckFileContent(t, path, want, maxRetry)
+	retryCheckFileContent(t, fp, want, maxRetry)
 
 	// Modify the annotation to false, no new log will be output now.
 	policy.ObjectMeta.Annotations = map[string]string{AnnotationEnableAllowLogging: "false"}
@@ -534,7 +534,7 @@ func TestLogDelegate(t *testing.T) {
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	// Wait to make sure that the file content is in its final state.
 	time.Sleep(3 * time.Second)
-	retryCheckFileContent(t, path, want, maxRetry)
+	retryCheckFileContent(t, fp, want, maxRetry)
 }
 
 func TestNetworkPolicyLogger_allowedPoliciesForDelegate(t *testing.T) {
