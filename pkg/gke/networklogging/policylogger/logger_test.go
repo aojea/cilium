@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"reflect"
 	"strings"
 	"testing"
@@ -52,13 +53,13 @@ const (
 
 	// denyLog is the expected policy log for the denyFlow
 	denyLog = `{"connection":{"src_ip":"10.84.1.8","dest_ip":"10.84.0.11","src_port":45084,"dest_port":8080,"protocol":"tcp","direction":"ingress"},"disposition":"deny","src":{"pod_name":"client-deny-5689846f5b-cqqsj","workload_kind":"ReplicaSet","workload_name":"client-deny-5689846f5b","pod_namespace":"default","namespace":"default"},"dest":{"pod_name":"test-service-745c798fc9-hzpxt","workload_kind":"ReplicaSet","workload_name":"test-service-745c798fc9","pod_namespace":"default","namespace":"default"},"count":1,"timestamp":"2020-06-13T21:30:22.292379064Z"}`
-
-	// testCfgString is the config file content for the testCfg
-	testCfgString = "logFilePath: /tmp/test \nlogFileName: policy_action.log\nlogFileMaxSize: 1\nlogFileMaxBackups: 1\nmaxLogRate: 200\nlogQueueSize: 100\ndenyAggregationSeconds: 2\ndenyAggregationMapSize: 100\nlogNodeName: false"
 )
 
 var (
-	testCfg = policyLoggerConfig{
+	// configTemplate is a template for the config file.
+	configTemplate = "logFilePath: %s \nlogFileName: %s\nlogFileMaxSize: 1\nlogFileMaxBackups: 1\nmaxLogRate: 200\nlogQueueSize: 100\ndenyAggregationSeconds: 2\ndenyAggregationMapSize: 100\nlogNodeName: false"
+
+	templateCfg = policyLoggerConfig{
 		logFilePath:            "/tmp/test",
 		logFileName:            "policy_action.log",
 		logFileMaxSize:         1,
@@ -257,39 +258,49 @@ func (c *testStoreGetter) GetK8sStore(name string) cache.Store {
 	return nil
 }
 
-func createConfigFile(t *testing.T, cfg string) {
-	if _, err := os.Stat(configFile); !os.IsNotExist(err) {
-		os.Remove(configFile)
+func createConfigFile(t *testing.T, fp, cfg string) {
+	t.Helper()
+	if _, err := os.Stat(fp); !os.IsNotExist(err) {
+		os.Remove(fp)
 	}
 
-	fp, err := os.OpenFile(configFile, os.O_RDWR|os.O_CREATE, 0755)
+	file, err := os.OpenFile(fp, os.O_RDWR|os.O_CREATE, 0755)
 	if err != nil {
-		t.Fatalf("OpenFile(%v) = (_, %v), want (_, nil)", configFile, err)
+		t.Fatalf("OpenFile(%v) = (_, %v), want (_, nil)", fp, err)
 	}
-	defer fp.Close()
-	_, err = fp.Write([]byte(cfg))
+	defer file.Close()
+	_, err = file.Write([]byte(cfg))
 	if err != nil {
 		t.Fatalf("Write(%v) = (_, %v), want (_, nil)", cfg, err)
 	}
 }
 
-func setupConfig(t *testing.T) {
-	configFile = testCfg.logFilePath + "/policy-logging.conf"
-	if _, err := os.Stat(testCfg.logFilePath); !os.IsNotExist(err) {
-		os.RemoveAll(testCfg.logFilePath)
+func setupConfig(t *testing.T) string {
+	t.Helper()
+	dir := path.Join(templateCfg.logFilePath, t.Name())
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		os.RemoveAll(dir)
 	}
-	if err := os.MkdirAll(testCfg.logFilePath, os.ModePerm); err != nil {
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		t.Fatalf("MkdirAll = %v, want nil", err)
 	}
-	createConfigFile(t, testCfgString)
-	cfg := loadInternalConfig(configFile)
-	if !reflect.DeepEqual(*cfg, testCfg) {
-		t.Fatalf("loadInternalConfig= %v, want %v", cfg, testCfg)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	configFilePath := path.Join(dir, "policy-logging.conf")
+	config := fmt.Sprintf(configTemplate, dir, templateCfg.logFileName)
+	createConfigFile(t, configFilePath, config)
+	cfg := loadInternalConfig(configFilePath)
+	refCfg := templateCfg
+	refCfg.logFilePath = dir
+	if !reflect.DeepEqual(*cfg, refCfg) {
+		t.Fatalf("loadInternalConfig= %v, want %v", cfg, refCfg)
 	}
+	return configFilePath
 }
 
 // TestLogger tests the quick state changes of logging spec when flow keeps coming in.
 func TestLoggerQuickStateChange(t *testing.T) {
+	t.Parallel()
 	setupConfig(t)
 
 	dpatcher := dispatcher.NewDispatcher()
@@ -327,12 +338,12 @@ func TestLoggerQuickStateChange(t *testing.T) {
 		retry++
 	}
 	close(stop)
-	os.RemoveAll(testCfg.logFilePath)
 }
 
 // TestLogger tests the logging configuration change flow.
 func TestLogger(t *testing.T) {
-	setupConfig(t)
+	t.Parallel()
+	configFilePath := setupConfig(t)
 
 	dpatcher := dispatcher.NewDispatcher()
 	observer := dpatcher.(dispatcher.Observer)
@@ -341,6 +352,7 @@ func TestLogger(t *testing.T) {
 		policyCorrelator: &testPolicyCorrelator{},
 		storeGetter:      &testStoreGetter{},
 		spec:             getLogSpec(nil),
+		configFilePath:   configFilePath,
 	}
 
 	if err, cb := logger.Start(); err != nil {
@@ -396,10 +408,10 @@ func TestLogger(t *testing.T) {
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	observer.OnDecodedFlow(context.Background(), denyFlow)
 	retryCheckFileContent(t, path, want, maxRetry)
-	os.RemoveAll(testCfg.logFilePath)
 }
 
 func retryCheckFileContent(t *testing.T, path string, want string, maxRetry int) {
+	t.Helper()
 	check := func(path, want string) error {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("fail to stat file: %v", err)
@@ -426,7 +438,8 @@ func retryCheckFileContent(t *testing.T, path string, want string, maxRetry int)
 
 // TestDenyLogAggregation tests the deny logs are correctly aggregated.
 func TestDenyLogAggregation(t *testing.T) {
-	setupConfig(t)
+	t.Parallel()
+	configFilePath := setupConfig(t)
 
 	dpatcher := dispatcher.NewDispatcher()
 	observer := dpatcher.(dispatcher.Observer)
@@ -435,6 +448,7 @@ func TestDenyLogAggregation(t *testing.T) {
 		policyCorrelator: &testPolicyCorrelator{},
 		storeGetter:      &testStoreGetter{},
 		spec:             getLogSpec(nil),
+		configFilePath:   configFilePath,
 	}
 
 	if err, cb := logger.Start(); err != nil {
@@ -459,12 +473,12 @@ func TestDenyLogAggregation(t *testing.T) {
 	want := strings.Replace(denyLog, `"count":1`, `"count":4`, 1)
 	want = want + "\n"
 	retryCheckFileContent(t, path, want, maxRetry)
-	os.RemoveAll(testCfg.logFilePath)
 }
 
 // TestLogDelegate tests the log delegate mode.
 func TestLogDelegate(t *testing.T) {
-	setupConfig(t)
+	t.Parallel()
+	configFilePath := setupConfig(t)
 
 	s := &testStoreGetter{}
 	s.Init()
@@ -475,6 +489,7 @@ func TestLogDelegate(t *testing.T) {
 		policyCorrelator: &testPolicyCorrelator{},
 		storeGetter:      s,
 		spec:             getLogSpec(nil),
+		configFilePath:   configFilePath,
 	}
 	if err, cb := logger.Start(); err != nil {
 		t.Errorf("logger.Start() = (_, %v), want (_, nil)", err)
@@ -520,7 +535,6 @@ func TestLogDelegate(t *testing.T) {
 	// Wait to make sure that the file content is in its final state.
 	time.Sleep(3 * time.Second)
 	retryCheckFileContent(t, path, want, maxRetry)
-	os.RemoveAll(testCfg.logFilePath)
 }
 
 func TestNetworkPolicyLogger_allowedPoliciesForDelegate(t *testing.T) {
