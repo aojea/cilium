@@ -43,10 +43,12 @@ type Policy struct {
 }
 
 // Workload stores the workload info. If the workload can be found
-// as a pod, PodName and PodNamespace are put into the structure.
+// as a pod, PodName and PodNamespace are put into the structure. If the
+// workload can be found as a node, NodeName is put into the structure.
 // Otherwise, IP is stored in the Instance field.
 type Workload struct {
 	PodName      string `json:"pod_name,omitempty"`
+	NodeName     string `json:"node_name,omitempty"`
 	WorkloadKind string `json:"workload_kind,omitempty"`
 	WorkloadName string `json:"workload_name,omitempty"`
 	PodNamespace string `json:"pod_namespace,omitempty"`
@@ -72,4 +74,23 @@ func (e *PolicyActionLogEntry) AggregationKey() interface{} {
 	key := e.Connection
 	key.SrcPort = 0
 	return key
+}
+
+// SkipLogging returns wether the event should be logged.
+func (e *PolicyActionLogEntry) SkipLogging() bool {
+	if e.Disposition == PolicyDispositionDeny {
+		return false
+	}
+
+	// TODO(markstjohn): remove condition once policy correlation is supported
+	// for node firewall policies.
+	if e.isNodeTraffic() {
+		return false
+	}
+
+	return e.Policies == nil
+}
+
+func (e *PolicyActionLogEntry) isNodeTraffic() bool {
+	return (e.Connection.Direction == ConnectionDirectionIngress && e.Dest.PodName == "") || (e.Connection.Direction == ConnectionDirectionEgress && e.Src.PodName == "")
 }

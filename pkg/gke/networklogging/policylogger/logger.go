@@ -170,14 +170,14 @@ func (n *networkPolicyLogger) Start() (error, func()) {
 		n.aggregatorCh = make(chan *aggregator.AggregatorEntry, n.cfg.logQueueSize)
 		n.aggregator = aggregator.NewAggregator(time.Duration(n.cfg.denyAggregationSeconds)*time.Second,
 			time.Second, int(n.cfg.denyAggregationMapSize), n.aggregatorCh,
-			func() { policyLoggingErrorCount.WithLabelValues(errorReasonAggregateQueue).Add(1) })
+			func() { policyLoggingErrorCount.WithLabelValues(errorReasonAggregateQueue).Inc() })
 		n.aggregator.Start()
 	}
 
 	go n.run()
 
 	if err := n.dispatcher.AddFlowListener("policy", int32(api.MessageTypePolicyVerdict), n.flowCh,
-		func() { policyLoggingErrorCount.WithLabelValues(errorReasonEvenetQueue).Add(1) }); err != nil {
+		func() { policyLoggingErrorCount.WithLabelValues(errorReasonEvenetQueue).Inc() }); err != nil {
 		err = fmt.Errorf("failed to add policy verdict listener: type %d, %w", api.MessageTypePolicyVerdict, err)
 		log.Error(err)
 		n.Stop()
@@ -285,13 +285,13 @@ func (n *networkPolicyLogger) shouldLogNamespace(name string) bool {
 	namespaceStore := n.storeGetter.GetK8sStore("namespace")
 	if namespaceStore == nil {
 		log.Error("Cannot find the namespace store")
-		policyLoggingErrorCount.WithLabelValues(errorReasonGetNamespace).Add(1)
+		policyLoggingErrorCount.WithLabelValues(errorReasonGetNamespace).Inc()
 		return false
 	}
 	obj, exist, err := namespaceStore.GetByKey(name)
 	if err != nil {
 		log.Errorf("Fail to fetch namespace %q: %v", name, err)
-		policyLoggingErrorCount.WithLabelValues(errorReasonGetNamespace).Add(1)
+		policyLoggingErrorCount.WithLabelValues(errorReasonGetNamespace).Inc()
 		return false
 	}
 	// Maybe the namespace is already deleted.
@@ -307,7 +307,7 @@ func (n *networkPolicyLogger) shouldLogNamespace(name string) bool {
 
 func (n *networkPolicyLogger) processFlow(f *flow.Flow) {
 	allow := isAllow(f)
-	policyLoggingEventCount.WithLabelValues(verdictLabel(allow)).Add(1)
+	policyLoggingEventCount.WithLabelValues(verdictLabel(allow)).Inc()
 
 	spec := n.getSpec()
 	if !spec.log {
@@ -317,48 +317,25 @@ func (n *networkPolicyLogger) processFlow(f *flow.Flow) {
 	e, err := n.flowToPolicyActionLogEntry(f)
 	if err != nil {
 		log.Debugf("Flow parsing failed. Flow: %v, err: %v", f, err)
-		policyLoggingErrorCount.WithLabelValues(errorReasonParsing).Add(1)
+		policyLoggingErrorCount.WithLabelValues(errorReasonParsing).Inc()
 		return
 	}
-	isNode := isNodeTraffic(e)
-	if isNode {
-		log.Debugf("Node policy log is not supported. Flow: %v", f)
-		return
-	}
+
 	// Don't log the connections allowed by default, such as health checks.
-	if allow && e.Policies == nil {
+	if e.SkipLogging() {
 		log.Debugf("Skip as matched policy is empty. Flow: %v", f)
 		return
 	}
 
-	// Only support cluster-level policy logs now. When node network policies
-	// are supported, this needs to be revised.
-	action := spec.getLogAction(false, allow)
+	isNode := e.isNodeTraffic()
+	action := spec.getLogAction(isNode, allow)
 	if !action.log {
-		log.Debugf("Logging is disabled for cluster, allow %v", allow)
+		log.WithField("action", action).Debug("Logging is disabled")
 		return
 	}
 
-	if action.delegate {
-		if allow {
-			logPolicies := n.allowedPoliciesForDelegate(e.Policies)
-			if len(logPolicies) == 0 {
-				log.WithField("policies", e.Policies).Debug("No matching policy")
-				return
-			}
-			e.Policies = logPolicies
-		} else {
-			var namespace string
-			if e.Connection.Direction == ConnectionDirectionIngress {
-				namespace = e.Dest.Namespace
-			} else {
-				namespace = e.Src.Namespace
-			}
-			if !n.shouldLogNamespace(namespace) {
-				log.Debugf("No log for namespace %s", namespace)
-				return
-			}
-		}
+	if action.delegate && !n.shouldLogDelegatedEvent(f, e, allow) {
+		return
 	}
 
 	if !allow && n.aggregator != nil {
@@ -369,53 +346,77 @@ func (n *networkPolicyLogger) processFlow(f *flow.Flow) {
 		// If aggregate fails due to aggregator size, drop the log to avoid it using
 		// up the rateLimiter quota.
 		log.Debugf("Fail to aggregate %v, err: %v", e, err)
-		policyLoggingDropCount.WithLabelValues(enforcementLabel(isNode), dropReasonAggregation).Add(1)
+		policyLoggingDropCount.WithLabelValues(enforcementLabel(isNode), dropReasonAggregation).Inc()
 		return
 	}
 
 	if n.rateLimiter.Allow() {
 		if b, err := json.Marshal(e); err != nil {
 			log.Errorf("Marshal failed: %v", err)
-			policyLoggingErrorCount.WithLabelValues(errorReasonMarshal).Add(1)
+			policyLoggingErrorCount.WithLabelValues(errorReasonMarshal).Inc()
 			return
 		} else {
 			if _, err = n.writer.Write(append(b, '\n')); err != nil {
-				policyLoggingErrorCount.WithLabelValues(errorReasonWrite).Add(1)
+				policyLoggingErrorCount.WithLabelValues(errorReasonWrite).Inc()
 				return
 			}
-			policyLoggingLogCount.WithLabelValues(enforcementLabel(isNode), verdictLabel(allow)).Add(1)
+			policyLoggingLogCount.WithLabelValues(enforcementLabel(isNode), verdictLabel(allow)).Inc()
 			delay := float64(time.Now().Sub(e.Timestamp).Microseconds())
 			policyLoggingAllowLatencies.Observe(delay)
 		}
 	} else {
-		policyLoggingDropCount.WithLabelValues(enforcementLabel(isNode), dropReasonRateLimit).Add(1)
+		policyLoggingDropCount.WithLabelValues(enforcementLabel(isNode), dropReasonRateLimit).Inc()
 	}
+}
+
+func (n *networkPolicyLogger) shouldLogDelegatedEvent(f *flow.Flow, e *PolicyActionLogEntry, allow bool) bool {
+	switch {
+	case allow:
+		logPolicies := n.allowedPoliciesForDelegate(e.Policies)
+		if len(logPolicies) == 0 {
+			log.WithField("policies", e.Policies).Debug("No matching policy")
+			return false
+		}
+		e.Policies = logPolicies
+	default:
+		var namespace string
+		if e.Connection.Direction == ConnectionDirectionIngress {
+			namespace = e.Dest.Namespace
+		} else {
+			namespace = e.Src.Namespace
+		}
+		if !n.shouldLogNamespace(namespace) {
+			log.WithField("namespace", namespace).Debug("Namespace is not configured for deny logging")
+			return false
+		}
+	}
+	return true
 }
 
 func (n *networkPolicyLogger) processAggregatedEntry(ae *aggregator.AggregatorEntry) {
 	e, ok := ae.Entry.(*PolicyActionLogEntry)
 	if !ok {
 		log.Errorf("Unexpected type %T", ae.Entry)
-		policyLoggingErrorCount.WithLabelValues(errorReasonObjectConversion).Add(1)
+		policyLoggingErrorCount.WithLabelValues(errorReasonObjectConversion).Inc()
 		return
 	}
 	e.Count = ae.Count
-	isNode := isNodeTraffic(e)
+	isNode := e.isNodeTraffic()
 	if n.rateLimiter.Allow() {
 		if b, err := json.Marshal(e); err != nil {
 			log.Errorf("Marshal failed: %v", err)
-			policyLoggingErrorCount.WithLabelValues(errorReasonMarshal).Add(1)
+			policyLoggingErrorCount.WithLabelValues(errorReasonMarshal).Inc()
 			return
 		} else {
 			if _, err = n.writer.Write(append(b, '\n')); err != nil {
-				policyLoggingErrorCount.WithLabelValues(errorReasonWrite).Add(1)
+				policyLoggingErrorCount.WithLabelValues(errorReasonWrite).Inc()
 				return
 			}
-			policyLoggingLogCount.WithLabelValues(enforcementLabel(isNode), verdictLabel(false)).Add(1)
+			policyLoggingLogCount.WithLabelValues(enforcementLabel(isNode), verdictLabel(false)).Inc()
 			delay := time.Now().Sub(e.Timestamp).Seconds()
 			policyLoggingDenyLatencies.Observe(delay)
 		}
 	} else {
-		policyLoggingDropCount.WithLabelValues(enforcementLabel(isNode), dropReasonRateLimit).Add(1)
+		policyLoggingDropCount.WithLabelValues(enforcementLabel(isNode), dropReasonRateLimit).Inc()
 	}
 }
