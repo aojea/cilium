@@ -124,8 +124,8 @@ func (dm *DeviceManager) Detect() ([]string, error) {
 		}
 	}
 
-	detectDirectRoutingDev := option.Config.DirectRoutingDeviceRequired()
-	if option.Config.DirectRoutingDeviceRequired() && option.Config.DirectRoutingDevice != "" {
+	detectDirectRoutingDev := option.Config.EnableNodePort
+	if option.Config.DirectRoutingDevice != "" {
 		dm.devices[option.Config.DirectRoutingDevice] = struct{}{}
 		detectDirectRoutingDev = false
 	}

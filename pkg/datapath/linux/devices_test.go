@@ -77,7 +77,7 @@ func (s *DevicesSuite) TestDetect(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(devices, checker.DeepEquals, []string{})
 
-		// 2. Node IP not set, can still detect. Direct routing device shouldn't be detected.
+		// 2. Node IP not set, can still detect.
 		option.Config.EnableNodePort = true
 		c.Assert(createDummy("dummy0", "192.168.0.1/24", false), IsNil)
 		node.SetK8sNodeIP(nil)
@@ -86,7 +86,7 @@ func (s *DevicesSuite) TestDetect(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(devices, checker.DeepEquals, []string{"dummy0"})
 		c.Assert(option.Config.GetDevices(), checker.DeepEquals, devices)
-		c.Assert(option.Config.DirectRoutingDevice, Equals, "")
+		c.Assert(option.Config.DirectRoutingDevice, Equals, "dummy0")
 
 		// 3. Manually specified devices, no detection is performed
 		option.Config.EnableNodePort = true
@@ -98,8 +98,9 @@ func (s *DevicesSuite) TestDetect(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(devices, checker.DeepEquals, []string{"dummy0"})
 		c.Assert(option.Config.GetDevices(), checker.DeepEquals, devices)
-		c.Assert(option.Config.DirectRoutingDevice, Equals, "")
+		c.Assert(option.Config.DirectRoutingDevice, Equals, "dummy0")
 		option.Config.SetDevices([]string{})
+		option.Config.DirectRoutingDevice = ""
 
 		// 4. Direct routing mode, should find all devices and set direct
 		// routing device to the one with k8s node ip.
