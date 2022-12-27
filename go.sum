@@ -170,6 +170,8 @@ github.com/cilium/dns v1.1.51-0.20220729113855-5b94b11b46fc/go.mod h1:e3IlAVfNqA
 github.com/cilium/ebpf v0.5.0/go.mod h1:4tRaxcgiL706VnOzHOdBlY8IEAIdxINsQBcU4xJJXRs=
 github.com/cilium/ebpf v0.10.0 h1:nk5HPMeoBXtOzbkZBWym+ZWq1GIiHUsBFXxwewXAHLQ=
 github.com/cilium/ebpf v0.10.0/go.mod h1:DPiVdY/kT534dgc9ERmvP8mWA+9gvwgKfRvk4nNWnoE=
+github.com/cilium/fake v0.4.0 h1:ATSUQaeKaBMJmSWQe+D0QYtiSA2WXOlisq4RbSkLdE8=
+github.com/cilium/fake v0.4.0/go.mod h1:21afzsL8AAyP1Mrz/qz5vCenHmtYxIJxnULri9ofXF8=
 github.com/cilium/ipam v0.0.0-20211026130907-54a76012817c h1:BNplQ8/gUxxF3ISPjM5h6+e/r1lld3VhGEjj2S02/7c=
 github.com/cilium/ipam v0.0.0-20211026130907-54a76012817c/go.mod h1:Ascfar4FtgB+K+mwqbZpSb3WVZ5sPFIarg+iAOXNZqI=
 github.com/cilium/kafka v0.0.0-20180809090225-01ce283b732b h1:+bsFX/WOMIoaayXVyRem1awcpz3icz/HoL8Dxg/m6a4=

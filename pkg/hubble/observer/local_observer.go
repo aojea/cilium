@@ -272,6 +272,17 @@ func (s *LocalObserverServer) GetFlows(
 		return err
 	}
 
+	mask, err := createFilter(req.Experimental.GetFieldMask())
+	if err != nil {
+		return err
+	}
+
+	var flow *flowpb.Flow
+	if mask.active() {
+		flow = new(flowpb.Flow)
+		mask.alloc(flow.ProtoReflect())
+	}
+
 nextEvent:
 	for ; ; i++ {
 		e, err := eventsReader.Next(ctx)
@@ -295,6 +306,11 @@ nextEvent:
 				case stop:
 					continue nextEvent
 				}
+			}
+			if mask.active() {
+				// Copy only fields in the mask
+				mask.copy(flow.ProtoReflect(), ev.ProtoReflect())
+				ev = flow
 			}
 			resp = &observerpb.GetFlowsResponse{
 				Time:     ev.GetTime(),
