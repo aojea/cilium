@@ -222,7 +222,7 @@ func (n *networkPolicyLogger) allowedPoliciesForDelegate(policies []*Policy) []*
 	var annotations map[string]string
 	for _, p := range policies {
 		if p.Kind == "" {
-			log.WithField("policy", logfields.Repr(p)).Error("Policy kind is empty")
+			log.WithField("policy", logfields.Repr(p)).Debug("Policy kind is empty")
 			policyLoggingErrorCount.WithLabelValues(errorReasonGetPolicy).Inc()
 			continue
 		}
