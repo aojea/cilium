@@ -1888,9 +1888,11 @@ static __always_inline int nodeport_lb4(struct __ctx_buff *ctx,
 skip_service_lookup:
 		ctx_set_xfer(ctx, XFER_PKT_NO_SVC);
 
+#ifndef ENABLE_EGRESS_GATEWAY
 #ifndef ENABLE_MASQUERADE
 		if (nodeport_uses_dsr4(&tuple))
 			return CTX_ACT_OK;
+#endif
 #endif
 		ctx_store_meta(ctx, CB_NAT, NAT_DIR_INGRESS);
 		ctx_store_meta(ctx, CB_SRC_IDENTITY, src_identity);
