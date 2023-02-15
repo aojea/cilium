@@ -25,6 +25,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+var _ policyCorrelator = &fakePolicyCorrelator{}
+
 type fakePolicyCorrelator struct {
 	retPolicies []*Policy
 	retErr      error

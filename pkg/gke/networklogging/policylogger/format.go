@@ -61,6 +61,7 @@ type Workload struct {
 type PolicyActionLogEntry struct {
 	Connection  Connection `json:"connection"`
 	Disposition string     `json:"disposition"`
+	Correlated  bool       `json:"-"`
 	Policies    []*Policy  `json:"policies,omitempty"`
 	Src         Workload   `json:"src"`
 	Dest        Workload   `json:"dest"`
@@ -77,7 +78,7 @@ func (e *PolicyActionLogEntry) AggregationKey() interface{} {
 }
 
 // SkipLogging returns wether the event should be logged.
-func (e *PolicyActionLogEntry) SkipLogging() bool {
+func (e *PolicyActionLogEntry) SkipLogging(allowUncorrelated bool) bool {
 	if e.Disposition == PolicyDispositionDeny {
 		return false
 	}
@@ -86,6 +87,20 @@ func (e *PolicyActionLogEntry) SkipLogging() bool {
 	// for node firewall policies.
 	if e.isNodeTraffic() {
 		return false
+	}
+
+	if len(e.Policies) > 0 {
+		e.Correlated = true
+	}
+	if !e.Correlated && allowUncorrelated {
+		// additionally check if the remote workloads of the entry have been populated.
+		// This means the observe resolved the remote endpoint.
+		if e.Connection.Direction == ConnectionDirectionIngress && e.Src.PodName != "" {
+			return false
+		}
+		if e.Connection.Direction == ConnectionDirectionEgress && e.Dest.PodName != "" {
+			return false
+		}
 	}
 
 	return e.Policies == nil

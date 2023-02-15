@@ -322,8 +322,8 @@ func (n *networkPolicyLogger) processFlow(f *flow.Flow) {
 	}
 
 	// Don't log the connections allowed by default, such as health checks.
-	if e.SkipLogging() {
-		log.Debugf("Skip as matched policy is empty. Flow: %v", f)
+	if e.SkipLogging(n.cfg.logUncorrelatedEntry) {
+		log.Debugf("Skip as matched policy slice is nil. Flow: %v", f)
 		return
 	}
 
@@ -338,16 +338,22 @@ func (n *networkPolicyLogger) processFlow(f *flow.Flow) {
 		return
 	}
 
+	// Flow has been completely processed.
+
 	if !allow && n.aggregator != nil {
-		if err := n.aggregator.Aggregate(e); err == nil {
-			log.Debugf("Aggregate %v", e)
+		if err := n.aggregator.Aggregate(e); err != nil {
+			// If aggregate fails due to aggregator size, drop the log to avoid it using
+			// up the rateLimiter quota.
+			log.Debugf("Fail to aggregate %v, err: %v", e, err)
+			policyLoggingDropCount.WithLabelValues(enforcementLabel(isNode), dropReasonAggregation).Inc()
 			return
 		}
-		// If aggregate fails due to aggregator size, drop the log to avoid it using
-		// up the rateLimiter quota.
-		log.Debugf("Fail to aggregate %v, err: %v", e, err)
-		policyLoggingDropCount.WithLabelValues(enforcementLabel(isNode), dropReasonAggregation).Inc()
+		log.Debugf("Aggregate %v", e)
 		return
+	}
+
+	if allow {
+		policyLoggingAllowedFlowProcessedCount.WithLabelValues(correlatedLabel(e.Correlated)).Inc()
 	}
 
 	if n.rateLimiter.Allow() {
@@ -371,8 +377,17 @@ func (n *networkPolicyLogger) processFlow(f *flow.Flow) {
 
 func (n *networkPolicyLogger) shouldLogDelegatedEvent(f *flow.Flow, e *PolicyActionLogEntry, allow bool) bool {
 	switch {
+	case !e.Correlated && n.cfg.logUncorrelatedEntry:
+		// Note: we are not respecting delegation here.
+		//
+		// Flow is uncorrelated and endpoint may be remote. Unable to resolve
+		// policies and (even with namespace-sameness) namespace may not be
+		// present in the cluster.
+		log.Debug("allow logging uncorrelated flow")
+		return true
 	case allow:
 		logPolicies := n.allowedPoliciesForDelegate(e.Policies)
+
 		if len(logPolicies) == 0 {
 			log.WithField("policies", e.Policies).Debug("No matching policy")
 			return false

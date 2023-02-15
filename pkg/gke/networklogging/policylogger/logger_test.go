@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -40,9 +39,15 @@ import (
 	policyapi "github.com/cilium/cilium/pkg/policy/api"
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 )
+
+func Ptr[T any](v T) *T {
+	return &v
+}
 
 const (
 	// maxRetry when verifying log content.
@@ -59,21 +64,25 @@ const (
 
 	// nodeDenyLog is the expected policy log for the denyFlow
 	nodeDenyLog = `{"connection":{"src_ip":"10.84.1.6","dest_ip":"10.128.0.9","src_port":45084,"dest_port":22,"protocol":"tcp","direction":"ingress"},"disposition":"deny","src":{"pod_name":"client-deny-5689846f5b-cqqsj","workload_kind":"ReplicaSet","workload_name":"client-deny-5689846f5b","pod_namespace":"default","namespace":"default"},"dest":{"node_name":"gke-demo-default-pool-e8df3298-412p","workload_kind":"Node"},"count":1,"timestamp":"2020-06-13T21:32:00.000000001Z"}` + "\n"
+
+	// allowLog is the expected policy log for the allowFlow
+	uncorrelatedLog = `{"connection":{"src_ip":"10.84.1.7","dest_ip":"10.84.0.11","src_port":55644,"dest_port":8080,"protocol":"tcp","direction":"ingress"},"disposition":"allow","src":{"pod_name":"client-allow-7b78d7c957-zkn54","workload_kind":"ReplicaSet","workload_name":"client-allow-7b78d7c957","pod_namespace":"default","namespace":"default"},"dest":{"pod_name":"test-service-745c798fc9-hzpxt","workload_kind":"ReplicaSet","workload_name":"test-service-745c798fc9","pod_namespace":"default","namespace":"default"},"count":1,"timestamp":"2020-06-13T21:29:31.445836587Z"}` + "\n"
+
+	baseLogFilePath = "/tmp/test"
 )
 
 var (
-	configTemplate = "logFilePath: %s \nlogFileName: %s\nlogFileMaxSize: 1\nlogFileMaxBackups: 1\nmaxLogRate: 200\nlogQueueSize: 100\ndenyAggregationSeconds: 2\ndenyAggregationMapSize: 100\nlogNodeName: false"
-
-	testCfg = policyLoggerConfig{
-		logFilePath:            "/tmp/test",
-		logFileName:            "policy_action.log",
-		logFileMaxSize:         1,
-		logFileMaxBackups:      1,
-		maxLogRate:             200,
-		logQueueSize:           100,
-		denyAggregationSeconds: 2,
-		denyAggregationMapSize: 100,
-		logNodeName:            false,
+	testCfg = PolicyLoggerConfiguration{
+		LogFilePath:            proto.String("/tmp/test"),
+		LogFileName:            proto.String("policy_action.log"),
+		LogFileMaxSize:         Ptr(uint(1)),
+		LogFileMaxBackups:      Ptr(uint(1)),
+		MaxLogRate:             Ptr(uint(200)),
+		LogQueueSize:           Ptr(uint(200)),
+		DenyAggregationSeconds: Ptr(uint(2)),
+		DenyAggregationMapSize: Ptr(uint(100)),
+		LogNodeName:            proto.Bool(false),
+		LogUncorrelatedEntry:   proto.Bool(false),
 	}
 
 	allowFlow = &flow.Flow{
@@ -326,7 +335,23 @@ var (
 	}
 )
 
-type testPolicyCorrelator struct{}
+var _ policyCorrelator = &testPolicyCorrelator{}
+
+func testCorrelator() *testPolicyCorrelator {
+	return &testPolicyCorrelator{
+		policies: []*Policy{
+			{
+				Kind:      "NetworkPolicy",
+				Name:      "allow-all",
+				Namespace: "default",
+			},
+		},
+	}
+}
+
+type testPolicyCorrelator struct {
+	policies []*Policy
+}
 
 func (c *testPolicyCorrelator) correlatePolicy(f *flow.Flow) ([]*Policy, error) {
 	if f.GetEventType().GetType() != int32(api.MessageTypePolicyVerdict) ||
@@ -334,13 +359,7 @@ func (c *testPolicyCorrelator) correlatePolicy(f *flow.Flow) ([]*Policy, error) 
 		return nil, nil
 	}
 
-	return []*Policy{
-		{
-			Kind:      "NetworkPolicy",
-			Name:      "allow-all",
-			Namespace: "default",
-		},
-	}, nil
+	return c.policies, nil
 }
 
 type testStoreGetter struct {
@@ -373,7 +392,7 @@ func (c *testStoreGetter) GetK8sStore(name string) cache.Store {
 	return nil
 }
 
-func createConfigFile(t *testing.T, fp, cfg string) {
+func createConfigFile(t *testing.T, fp string, cfg []byte) {
 	t.Helper()
 	if _, err := os.Stat(fp); !os.IsNotExist(err) {
 		os.Remove(fp)
@@ -384,15 +403,15 @@ func createConfigFile(t *testing.T, fp, cfg string) {
 		t.Fatalf("OpenFile(%v) = (_, %v), want (_, nil)", fp, err)
 	}
 	defer file.Close()
-	_, err = file.Write([]byte(cfg))
+	_, err = file.Write(cfg)
 	if err != nil {
 		t.Fatalf("Write(%v) = (_, %v), want (_, nil)", cfg, err)
 	}
 }
 
-func setupConfig(t *testing.T) string {
+func setupConfig(t *testing.T, loggerConfig *PolicyLoggerConfiguration) string {
 	t.Helper()
-	dir := path.Join(testCfg.logFilePath, t.Name())
+	dir := path.Join(baseLogFilePath, t.Name())
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		os.RemoveAll(dir)
 	}
@@ -401,28 +420,28 @@ func setupConfig(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
-	configFilePath := path.Join(dir, "policy-logging.conf")
-	config := fmt.Sprintf(configTemplate, dir, testCfg.logFileName)
-	createConfigFile(t, configFilePath, config)
-	cfg := loadInternalConfig(configFilePath)
-	refCfg := testCfg
-	refCfg.logFilePath = dir
-	if !reflect.DeepEqual(*cfg, refCfg) {
-		t.Fatalf("loadInternalConfig= %v, want %v", cfg, refCfg)
+	loggerConfig.LogFilePath = proto.String(dir)
+	yamlData, err := yaml.Marshal(loggerConfig)
+	if err != nil {
+		t.Fatalf("Failed to Marshal policyLoggerConfig: %v", err)
 	}
+
+	configFilePath := path.Join(dir, "policy-logging.conf")
+	createConfigFile(t, configFilePath, yamlData)
 	return configFilePath
 }
 
 // TestLogger tests the quick state changes of logging spec when flow keeps coming in.
 func TestLoggerQuickStateChange(t *testing.T) {
 	t.Parallel()
-	configFilePath := setupConfig(t)
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
 
 	dpatcher := dispatcher.NewDispatcher()
 	observer := dpatcher.(dispatcher.Observer)
 	logger := &networkPolicyLogger{
 		dispatcher:       dpatcher,
-		policyCorrelator: &testPolicyCorrelator{},
+		policyCorrelator: testCorrelator(),
 		storeGetter:      &testStoreGetter{},
 		spec:             getLogSpec(nil),
 		configFilePath:   configFilePath,
@@ -459,13 +478,14 @@ func TestLoggerQuickStateChange(t *testing.T) {
 // TestLogger tests the logging configuration change flow.
 func TestLogger(t *testing.T) {
 	t.Parallel()
-	configFilePath := setupConfig(t)
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
 
 	dpatcher := dispatcher.NewDispatcher()
 	observer := dpatcher.(dispatcher.Observer)
 	logger := &networkPolicyLogger{
 		dispatcher:       dpatcher,
-		policyCorrelator: &testPolicyCorrelator{},
+		policyCorrelator: testCorrelator(),
 		storeGetter:      &testStoreGetter{},
 		spec:             getLogSpec(nil),
 		configFilePath:   configFilePath,
@@ -498,7 +518,6 @@ func TestLogger(t *testing.T) {
 
 	// Test updating configuration to log both allowed and denied traffic.
 	// Verify that both allow and deny log will not be logged.
-	spec.Cluster.Allow.Log = true
 	spec.Cluster.Deny.Log = true
 	if update := logger.UpdateLoggingSpec(&spec); !update {
 		t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
@@ -509,7 +528,6 @@ func TestLogger(t *testing.T) {
 	retryCheckFileContent(t, fp, want, maxRetry)
 
 	spec.Cluster.Allow.Log = false
-	spec.Cluster.Deny.Log = true
 	if update := logger.UpdateLoggingSpec(&spec); !update {
 		t.Fatalf("UpdateLoggingSpec(%v) = %v, want true", spec, update)
 	}
@@ -529,13 +547,14 @@ func TestLogger(t *testing.T) {
 // TestDenyLogAggregation tests the deny logs are correctly aggregated.
 func TestDenyLogAggregation(t *testing.T) {
 	t.Parallel()
-	configFilePath := setupConfig(t)
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
 
 	dpatcher := dispatcher.NewDispatcher()
 	observer := dpatcher.(dispatcher.Observer)
 	logger := &networkPolicyLogger{
 		dispatcher:       dpatcher,
-		policyCorrelator: &testPolicyCorrelator{},
+		policyCorrelator: testCorrelator(),
 		storeGetter:      &testStoreGetter{},
 		spec:             getLogSpec(nil),
 		configFilePath:   configFilePath,
@@ -566,7 +585,8 @@ func TestDenyLogAggregation(t *testing.T) {
 // TestLogDelegate tests the log delegate mode.
 func TestLogDelegate(t *testing.T) {
 	t.Parallel()
-	configFilePath := setupConfig(t)
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
 
 	s := &testStoreGetter{}
 	s.Init()
@@ -574,7 +594,7 @@ func TestLogDelegate(t *testing.T) {
 	observer := dpatcher.(dispatcher.Observer)
 	logger := &networkPolicyLogger{
 		dispatcher:       dpatcher,
-		policyCorrelator: &testPolicyCorrelator{},
+		policyCorrelator: testCorrelator(),
 		storeGetter:      s,
 		spec:             getLogSpec(nil),
 		configFilePath:   configFilePath,
@@ -626,7 +646,8 @@ func TestLogDelegate(t *testing.T) {
 
 func TestNetworkPolicyLogger_allowedPoliciesForDelegate(t *testing.T) {
 	t.Parallel()
-	configFilePath := setupConfig(t)
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
 
 	getter := &testStoreGetter{}
 	getter.Init()
@@ -697,7 +718,8 @@ func TestNetworkPolicyLogger_allowedPoliciesForDelegate(t *testing.T) {
 
 func TestNetworkPolicyLogger_NodeTraffic(t *testing.T) {
 	t.Parallel()
-	configFilePath := setupConfig(t)
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
 
 	s := &testStoreGetter{}
 	s.Init()
@@ -706,7 +728,7 @@ func TestNetworkPolicyLogger_NodeTraffic(t *testing.T) {
 	observer := dpatcher.(dispatcher.Observer)
 	logger := &networkPolicyLogger{
 		dispatcher:       dpatcher,
-		policyCorrelator: &testPolicyCorrelator{},
+		policyCorrelator: testCorrelator(),
 		storeGetter:      s,
 		spec:             getLogSpec(nil),
 		configFilePath:   configFilePath,
@@ -761,7 +783,8 @@ func TestNetworkPolicyLogger_NodeTraffic(t *testing.T) {
 
 func TestNetworkPolicyLogger_DontLogDisabledTraffic(t *testing.T) {
 	t.Parallel()
-	configFilePath := setupConfig(t)
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
 
 	s := &testStoreGetter{}
 	s.Init()
@@ -770,7 +793,7 @@ func TestNetworkPolicyLogger_DontLogDisabledTraffic(t *testing.T) {
 	observer := dpatcher.(dispatcher.Observer)
 	logger := &networkPolicyLogger{
 		dispatcher:       dpatcher,
-		policyCorrelator: &testPolicyCorrelator{},
+		policyCorrelator: testCorrelator(),
 		storeGetter:      s,
 		spec:             getLogSpec(nil),
 		configFilePath:   configFilePath,
@@ -944,4 +967,73 @@ func seedStores(t testing.TB, getter *testStoreGetter) {
 	})); err != nil {
 		t.Fatalf("Unable to initialize network policy store: %v", err)
 	}
+}
+
+func TestLogger_LogUncorrelatedEntries(t *testing.T) {
+	t.Parallel()
+	cfg := testCfg
+	cfg.LogUncorrelatedEntry = proto.Bool(true)
+	configFilePath := setupConfig(t, &cfg)
+
+	dpatcher := dispatcher.NewDispatcher()
+	observer := dpatcher.(dispatcher.Observer)
+	logger := &networkPolicyLogger{
+		dispatcher:       dpatcher,
+		policyCorrelator: &testPolicyCorrelator{},
+		storeGetter:      &testStoreGetter{},
+		spec:             getLogSpec(nil),
+		configFilePath:   configFilePath,
+	}
+	err, cb := logger.Start()
+	if err != nil {
+		t.Fatalf("Unexpected error returned by logger.Start(): %v", err)
+	}
+	cb()
+
+	defer logger.Stop()
+	fp := path.Join(logger.cfg.logFilePath, logger.cfg.logFileName)
+
+	// Start from log disabled with should be the default state.
+	spec := v1alpha1.NetworkLoggingSpec{
+		Cluster: v1alpha1.ClusterLogSpec{Allow: v1alpha1.LogAction{Log: true}},
+		Node:    v1alpha1.NodeLogSpec{Allow: v1alpha1.LogAction{Log: true}},
+	}
+	logger.UpdateLoggingSpec(&spec)
+
+	observer.OnDecodedFlow(context.Background(), allowFlow)
+	want := uncorrelatedLog
+	retryCheckFileContent(t, fp, want, maxRetry)
+}
+
+func TestLogger_DontLogUncorrelatedEntries(t *testing.T) {
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
+
+	dpatcher := dispatcher.NewDispatcher()
+	observer := dpatcher.(dispatcher.Observer)
+	logger := &networkPolicyLogger{
+		dispatcher:       dpatcher,
+		policyCorrelator: &testPolicyCorrelator{},
+		storeGetter:      &testStoreGetter{},
+		spec:             getLogSpec(nil),
+		configFilePath:   configFilePath,
+	}
+	err, cb := logger.Start()
+	if err != nil {
+		t.Fatalf("Unexpected error returned by logger.Start(): %v", err)
+	}
+	cb()
+
+	defer logger.Stop()
+	fp := path.Join(logger.cfg.logFilePath, logger.cfg.logFileName)
+
+	// Start from log disabled with should be the default state.
+	spec := v1alpha1.NetworkLoggingSpec{
+		Cluster: v1alpha1.ClusterLogSpec{Allow: v1alpha1.LogAction{Log: true}},
+		Node:    v1alpha1.NodeLogSpec{Allow: v1alpha1.LogAction{Log: true}},
+	}
+	logger.UpdateLoggingSpec(&spec)
+
+	observer.OnDecodedFlow(context.Background(), allowFlow)
+	retryCheckFileContent(t, fp, "", maxRetry)
 }
