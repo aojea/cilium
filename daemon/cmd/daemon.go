@@ -1174,8 +1174,6 @@ func NewDaemon(ctx context.Context, cancel context.CancelFunc, epMgr *endpointma
 		d.restoreCiliumHostIPs(true, router6FromK8s)
 	}
 
-	d.initGoogleControllers(ctx)
-
 	// restore endpoints before any IPs are allocated to avoid eventual IP
 	// conflicts later on, otherwise any IP conflict will result in the
 	// endpoint not being able to be restored.
@@ -1314,6 +1312,8 @@ func NewDaemon(ctx context.Context, cancel context.CancelFunc, epMgr *endpointma
 	if err := <-syncErrs; err != nil {
 		return nil, nil, err
 	}
+
+	d.initGoogleControllers(ctx)
 
 	if err := loader.RestoreTemplates(option.Config.StateDir); err != nil {
 		log.WithError(err).Error("Unable to restore previous BPF templates")
