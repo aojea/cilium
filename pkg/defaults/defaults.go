@@ -512,4 +512,8 @@ const (
 
 	// Enable BGP control plane features.
 	EnableBGPControlPlane = false
+
+	// EnableMergeCIDRPrefixIPLabels controls whether to merge labels for CIDR
+	// prefix IPs.
+	EnableMergeCIDRPrefixIPLabels = true
 )
