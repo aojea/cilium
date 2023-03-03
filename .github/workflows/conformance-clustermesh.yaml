@@ -274,7 +274,8 @@ jobs:
         CLUSTERMESH_ENABLE_DEFAULTS="--apiserver-image=quay.io/${{ env.QUAY_ORGANIZATION_DEV }}/clustermesh-apiserver-ci \
           --apiserver-version=${SHA} --service-type=NodePort"
 
-        CONNECTIVITY_TEST_DEFAULTS="--context=${{ env.contextName1 }} \
+        CONNECTIVITY_TEST_DEFAULTS="--hubble=false \
+          --flow-validation=disabled \
           --multi-cluster=${{ env.contextName2 }} \
           --external-target=google.com \
           --collect-sysdump-on-failure"
