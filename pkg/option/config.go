@@ -1106,6 +1106,9 @@ const (
 	// EnableGoogleServiceSteering is the name of the option to enable google service steering support.
 	EnableGoogleServiceSteering = "enable-google-service-steering"
 
+	// PopulateGCENICInfo is the name of the option to populate GCE NIC information as node annotation.
+	PopulateGCENICInfo = "populate-gce-nic-info"
+
 	// EnableGDCILB is the name of the option to enable google GDC-H ILB Support
 	EnableGDCILB = "enable-gdc-ilb"
 
@@ -2356,6 +2359,9 @@ type DaemonConfig struct {
 	// EnableGoogleServiceSteering is a feature flag for google service steering support, default is false.
 	EnableGoogleServiceSteering bool
 
+	// PopulateGCENICInfo is a feature flag for google high performance multinetworking support, default is false.
+	PopulateGCENICInfo bool
+
 	// EnableGDCILB is a feature flag for google GDC-H ILB Support, default is false
 	EnableGDCILB bool
 
@@ -3035,6 +3041,7 @@ func (c *DaemonConfig) Populate() {
 	c.EnableTrafficSteering = viper.GetBool(EnableTrafficSteering)
 	c.EnableLocalRedirectPolicy = viper.GetBool(EnableLocalRedirectPolicy)
 	c.EnableGoogleMultiNIC = viper.GetBool(EnableGoogleMultiNIC)
+	c.PopulateGCENICInfo = viper.GetBool(PopulateGCENICInfo)
 	c.EnableGoogleServiceSteering = viper.GetBool(EnableGoogleServiceSteering)
 	c.EnableGDCILB = viper.GetBool(EnableGDCILB)
 	c.AllowDisableSourceIPValidation = viper.GetBool(AllowDisableSourceIPValidation)
