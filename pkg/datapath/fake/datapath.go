@@ -10,10 +10,11 @@ import (
 	"github.com/cilium/cilium/pkg/datapath"
 	"github.com/cilium/cilium/pkg/datapath/loader/metrics"
 	"github.com/cilium/cilium/pkg/datapath/types"
+	nodeTypes "github.com/cilium/cilium/pkg/node/types"
 )
 
 type fakeDatapath struct {
-	node           *fakeNodeHandler
+	node           *FakeNodeHandler
 	nodeAddressing types.NodeAddressing
 	loader         datapath.Loader
 }
@@ -21,7 +22,7 @@ type fakeDatapath struct {
 // NewDatapath returns a new fake datapath
 func NewDatapath() datapath.Datapath {
 	return &fakeDatapath{
-		node:           NewNodeHandler(),
+		node:           &FakeNodeHandler{make(map[string]nodeTypes.Node)},
 		nodeAddressing: NewNodeAddressing(),
 		loader:         &fakeLoader{},
 	}
