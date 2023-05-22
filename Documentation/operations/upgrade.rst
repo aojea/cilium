@@ -393,6 +393,10 @@ New Options
   of kvstore), so this flag is moved out of deprecated list.
 * ``enable-pmtu-discovery``: This option enables path MTU discovery to send ICMP
   fragmentation-needed replies to the client. Use ``pmtuDiscovery`` in Helm chart.
+* ``tls-relay-client-ca-files``: This option lets you provide a certificate authority (CA)
+  key and cert in Hubble Relay to authenticate Hubble Relay's clients with mTLS. When you provide a CA key and cert,
+  Hubble Relay enforces mTLS authentication on its clients (for example, Hubble CLI
+  client can't connect to Hubble Relay using ``--tls-allow-insecure``).
 
 Removed Options
 ~~~~~~~~~~~~~~~
@@ -425,6 +429,11 @@ Deprecated Options
   Helm) was deprecated, and it will be removed in version 1.13.
 * The ``probe`` option of ``kube-proxy-replacement`` was deprecated, and it will
   be removed in version 1.13.
+* The following Hubble Relay options are deprecated and will be removed in v1.15:
+   * ``tls-client-cert-file`` (replaced with ``tls-hubble-client-cert-file``).
+   * ``tls-client-key-file`` (replaced with ``tls-hubble-client-key-file``).
+   * ``tls-server-cert-file`` (replaced with ``tls-relay-server-cert-file``).
+   * ``tls-server-key-file`` (replaced with ``tls-relay-server-key-file``).
 
 Helm Options
 ~~~~~~~~~~~~
