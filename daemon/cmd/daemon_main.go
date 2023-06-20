@@ -1053,6 +1053,15 @@ func initializeFlags() {
 	flags.Bool(option.HubbleExportFileCompress, exporteroption.Default.Compress, "Compress rotated Hubble export files.")
 	option.BindEnv(option.HubbleExportFileCompress)
 
+	flags.StringSlice(option.HubbleExportAllowlist, []string{}, "Specify allowlist as JSON encoded FlowFilters to Hubble exporter.")
+	option.BindEnv(option.HubbleExportAllowlist)
+
+	flags.StringSlice(option.HubbleExportDenylist, []string{}, "Specify denylist as JSON encoded FlowFilters to Hubble exporter.")
+	option.BindEnv(option.HubbleExportDenylist)
+
+	flags.StringSlice(option.HubbleExportFieldmask, []string{}, "Specify list of fields to use for field mask in Hubble exporter.")
+	option.BindEnv(option.HubbleExportFieldmask)
+
 	flags.Bool(option.EnableHubbleRecorderAPI, true, "Enable the Hubble recorder API")
 	option.BindEnv(option.EnableHubbleRecorderAPI)
 

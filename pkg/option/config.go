@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -23,7 +24,9 @@ import (
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
+	flowpb "github.com/cilium/cilium/api/v1/flow"
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/cidr"
 	clustermeshTypes "github.com/cilium/cilium/pkg/clustermesh/types"
@@ -996,6 +999,15 @@ const (
 
 	// HubbleExportFileCompress specifies whether rotated files are compressed.
 	HubbleExportFileCompress = "hubble-export-file-compress"
+
+	// HubbleExportAllowlist specifies allow list filter use by exporter.
+	HubbleExportAllowlist = "hubble-export-allowlist"
+
+	// HubbleExportDenylist specifies deny list filter use by exporter.
+	HubbleExportDenylist = "hubble-export-denylist"
+
+	// HubbleExportFieldmask specifies list of fields to log in exporter.
+	HubbleExportFieldmask = "hubble-export-fieldmask"
 
 	// EnableHubbleRecorderAPI specifies if the Hubble Recorder API should be served
 	EnableHubbleRecorderAPI = "enable-hubble-recorder-api"
@@ -2238,6 +2250,15 @@ type DaemonConfig struct {
 	// HubbleExportFileCompress specifies whether rotated files are compressed.
 	HubbleExportFileCompress bool
 
+	// HubbleExportAllowlist specifies allow list filter use by exporter.
+	HubbleExportAllowlist []*flowpb.FlowFilter
+
+	// HubbleExportDenylist specifies deny list filter use by exporter.
+	HubbleExportDenylist []*flowpb.FlowFilter
+
+	// HubbleExportFieldmask specifies list of fields to log in exporter.
+	HubbleExportFieldmask []string
+
 	// EnableHubbleRecorderAPI specifies if the Hubble Recorder API should be served
 	EnableHubbleRecorderAPI bool
 
@@ -3468,10 +3489,44 @@ func (c *DaemonConfig) Populate() {
 	c.HubbleExportFileMaxSizeMB = viper.GetInt(HubbleExportFileMaxSizeMB)
 	c.HubbleExportFileMaxBackups = viper.GetInt(HubbleExportFileMaxBackups)
 	c.HubbleExportFileCompress = viper.GetBool(HubbleExportFileCompress)
+
+	for _, enc := range viper.GetStringSlice(HubbleExportAllowlist) {
+		dec := json.NewDecoder(strings.NewReader(enc))
+		var result flowpb.FlowFilter
+		if err := dec.Decode(&result); err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Fatalf("failed to decode hubble-export-allowlist '%v': %s", enc, err)
+		}
+		c.HubbleExportAllowlist = append(c.HubbleExportAllowlist, &result)
+	}
+
+	for _, enc := range viper.GetStringSlice(HubbleExportDenylist) {
+		dec := json.NewDecoder(strings.NewReader(enc))
+		var result flowpb.FlowFilter
+		if err := dec.Decode(&result); err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Fatalf("failed to decode hubble-export-denylist '%v': %s", enc, err)
+		}
+		c.HubbleExportDenylist = append(c.HubbleExportDenylist, &result)
+	}
+
+	if fm := viper.GetStringSlice(HubbleExportFieldmask); len(fm) > 0 {
+		_, err := fieldmaskpb.New(&flowpb.Flow{}, fm...)
+		if err != nil {
+			log.Fatalf("hubble-export-fieldmask contains invalid fieldmask '%v': %s", fm, err)
+		}
+		c.HubbleExportFieldmask = viper.GetStringSlice(HubbleExportFieldmask)
+	}
+
 	c.EnableHubbleRecorderAPI = viper.GetBool(EnableHubbleRecorderAPI)
 	c.HubbleRecorderStoragePath = viper.GetString(HubbleRecorderStoragePath)
 	c.HubbleRecorderSinkQueueSize = viper.GetInt(HubbleRecorderSinkQueueSize)
 	c.HubbleMonitorEvents = viper.GetStringSlice(HubbleMonitorEvents)
+
 	c.DisableIptablesFeederRules = viper.GetStringSlice(DisableIptablesFeederRules)
 	c.EnableCiliumEndpointSlice = viper.GetBool(EnableCiliumEndpointSlice)
 
