@@ -76,7 +76,7 @@ function clone_upstream_cilium_code_to_prow {
     git checkout "${UPSTREAM_CILIUM_BRANCH}"
     git submodule update --init
     go mod vendor
-    COMMIT_SHA=$(git rev-parse master)
+    COMMIT_SHA=$(git rev-parse "${UPSTREAM_CILIUM_BRANCH}")
     echo "COMMIT SHA: ${COMMIT_SHA}"
     popd || exit 0
 }
