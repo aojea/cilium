@@ -1223,11 +1223,11 @@ func initializeFlags() {
 	flags.MarkHidden(option.EnableMergeCIDRPrefixIPLabels)
 	option.BindEnv(option.EnableMergeCIDRPrefixIPLabels)
 
-	flags.Int(option.THCPort, 0, "The port for Transparent Health Checks")
+	flags.Int(option.THCPort, 7877, "The port for Transparent Health Checks")
 	flags.MarkHidden(option.THCPort)
 	option.BindEnv(option.THCPort)
 
-	flags.StringSlice(option.THCSourceRanges, []string{}, "Comma-separated list of Transparent Health Checks source IP ranges")
+	flags.StringSlice(option.THCSourceRanges, []string{"35.191.0.0/16", "130.211.0.0/22"}, "Comma-separated list of Transparent Health Checks source IP ranges")
 	flags.MarkHidden(option.THCSourceRanges)
 	option.BindEnv(option.THCSourceRanges)
 
