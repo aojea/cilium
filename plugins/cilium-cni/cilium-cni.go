@@ -667,6 +667,7 @@ func cmdDel(args *skel.CmdArgs) error {
 					Args:    args,
 					CniArgs: cniArgs,
 					NetConf: n,
+					Client:  c,
 				}
 			)
 
