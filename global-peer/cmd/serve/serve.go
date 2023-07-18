@@ -85,9 +85,11 @@ func runServe(ctx context.Context, vp *viper.Viper) error {
 		logging.SetLogLevelToDebug()
 	}
 	logger := logging.DefaultLogger.WithField(logfields.LogSubsys, "global-peer")
-	vp.SetConfigFile(vp.GetString(keyConfigPath))
-	if err := vp.MergeInConfig(); err != nil {
-		return fmt.Errorf("failed to parse %q config: %v", vp.GetString(keyConfigPath), err)
+	if configPath := vp.GetString(keyConfigPath); configPath != "" {
+		vp.SetConfigFile(configPath)
+		if err := vp.MergeInConfig(); err != nil {
+			return fmt.Errorf("parse %q config: %v", configPath, err)
+		}
 	}
 
 	opts := server.Options{
