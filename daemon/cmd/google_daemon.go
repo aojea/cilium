@@ -9,6 +9,7 @@ import (
 	"github.com/cilium/cilium/pkg/gke/multinic"
 	multinicctrl "github.com/cilium/cilium/pkg/gke/multinic/controller"
 	dhcp "github.com/cilium/cilium/pkg/gke/multinic/dhcp"
+	"github.com/cilium/cilium/pkg/gke/pip"
 	"github.com/cilium/cilium/pkg/gke/servicesteering"
 	"github.com/cilium/cilium/pkg/k8s"
 	"github.com/cilium/cilium/pkg/logging"
@@ -34,6 +35,7 @@ var (
 
 	multiniclog = logging.DefaultLogger.WithField(logfields.LogSubsys, "multinic")
 	sslog       = logging.DefaultLogger.WithField(logfields.LogSubsys, "servicesteering")
+	piplog      = logging.DefaultLogger.WithField(logfields.LogSubsys, "persistentip")
 )
 
 func init() {
@@ -77,6 +79,13 @@ func (d *Daemon) initGoogleControllers(ctx context.Context, endpoints []*endpoin
 	if option.Config.EnableGoogleServiceSteering {
 		if err := d.initServiceSteering(ctx, mgr); err != nil {
 			log.WithError(err).Fatal("Unable to init service steering")
+		}
+	}
+
+	// Initialize persistent-ip controller
+	if option.Config.EnableGooglePersistentIP {
+		if err := d.initPersistentIP(ctx, mgr); err != nil {
+			log.WithError(err).Fatal("Unable to init persistent ip controller")
 		}
 	}
 
@@ -160,6 +169,16 @@ func (d *Daemon) initServiceSteering(ctx context.Context, mgr manager.Manager) e
 		return fmt.Errorf("failed to setup service steering controller: %v", err)
 	}
 	sslog.Info("Created service steering controller")
+	return nil
+}
+
+func (d *Daemon) initPersistentIP(ctx context.Context, mgr manager.Manager) error {
+	if err := (&pip.IPRouteReconciler{
+		Client: mgr.GetClient(),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to persistent ip controller: %v", err)
+	}
+	piplog.Info("Created persistent ip controller")
 	return nil
 }
 
