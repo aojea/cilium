@@ -32,6 +32,7 @@ export HUBBLE_RELAY_TAG=cilium/hubble-relay
 export CLUSTERMESH_APISERVER_TAG=cilium/clustermesh-apiserver
 export HTTPS_PROXY=http://localhost:8118
 export HTTP_PROXY=http://localhost:8118
+export ACCOUNT_NAME=anthos-networking-ci-runner@anthos-networking-ci.iam.gserviceaccount.com
 
 echo "  ARTIFACTS        = ${ARTIFACTS}"
 echo "  KUBETEST2_RUN_ID = ${KUBETEST2_RUN_ID}"
@@ -66,19 +67,8 @@ for resource_directory in "${ARTIFACTS}/.kubetest2-tailorbird"/*; do
     fi
 done
 
-# Access the created kind cluster and get the cluter name
+# Access the created kind cluster and get the cluster name
 CLUSTER_NAME=$(kubectl config get-contexts --kubeconfig "${KUBECONFIG}" | grep kind- | tr -s ' ' | cut -d " " -f 2 | cut -d "-" -f 2)
-
-# Remove kube-proxy and kindnet in preparation to install cilium
-kubectl delete ds kube-proxy -n kube-system
-kubectl delete ds kindnet -n kube-system
-
-# Generate k8s Secrete from eligible SA for pulling images from GCR.
-export ACCOUNT_NAME=anthos-networking-ci-runner@anthos-networking-ci.iam.gserviceaccount.com
-export ACCOUNT_KEY=${ACCOUNT_NAME}-key.json
-gcloud iam service-accounts keys create "${ACCOUNT_KEY}" --iam-account="${ACCOUNT_NAME}"
-export SECRETNAME=gcr-pull-secret
-kubectl create secret -n kube-system docker-registry "${SECRETNAME}" --docker-server=https://gcr.io --docker-username=_json_key --docker-email="${ACCOUNT_NAME}" --docker-password="$(cat "${ACCOUNT_KEY}")"
 
 # This function delete all existing SA key generated due to limited number allowed for each SA.
 function clean_up_user_generated_SA_keys {
@@ -90,7 +80,7 @@ function clean_up_user_generated_SA_keys {
     done
 }
 
-# This function install kind to get logs from kind cluster.
+# This function installs kind to get logs from kind cluster.
 function get_log_from_kind_cluster {
     # Obtain hostmachine ip and username
     HOST_MACHINE_USER="$(jq '.default_transport.attributes.username' "${HOST_MACHINE_INFO_DIR}"/connectivity_metadata.json | tr -d '"')"
@@ -100,6 +90,7 @@ function get_log_from_kind_cluster {
     ssh -i "${HOST_MACHINE_INFO_DIR}"/id_rsa -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes "${HOST_MACHINE_USER}@${HOST_MACHINE_IP}" "mkdir -p ${KIND_LOGDUMP} && kind export logs --name ${CLUSTER_NAME} ${KIND_LOGDUMP}"
     scp -i "${HOST_MACHINE_INFO_DIR}"/id_rsa -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes -r "${HOST_MACHINE_USER}@${HOST_MACHINE_IP}":"${KIND_LOGDUMP}" "${ARTIFACTS}"
 }
+
 function clean_up_before_exit {
     set +e
     # Dump all debug info
@@ -114,6 +105,16 @@ function clean_up_before_exit {
 }
 
 trap clean_up_before_exit EXIT
+
+# Remove kube-proxy and kindnet in preparation to install cilium.
+kubectl delete ds kube-proxy -n kube-system
+kubectl delete ds kindnet -n kube-system
+
+# Generate k8s secret from eligible SA for pulling images from GCR.
+export ACCOUNT_KEY=${ACCOUNT_NAME}-key.json
+gcloud iam service-accounts keys create "${ACCOUNT_KEY}" --iam-account="${ACCOUNT_NAME}"
+export SECRETNAME=gcr-pull-secret
+kubectl create secret -n kube-system docker-registry "${SECRETNAME}" --docker-server=https://gcr.io --docker-username=_json_key --docker-email="${ACCOUNT_NAME}" --docker-password="$(cat "${ACCOUNT_KEY}")"
 
 # Install Cilium CLI
 curl -sSL --remote-name-all https://github.com/cilium/cilium-cli/releases/download/"${CILIUM_CLI_VERSION}"/cilium-linux-amd64.tar.gz{,.sha256sum}
