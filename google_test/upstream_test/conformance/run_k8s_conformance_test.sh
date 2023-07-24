@@ -24,7 +24,8 @@ CILIUM_CLI_VERSION=v0.13.0
 K8S_VERSION=v1.27.3
 export DOCKER_BUILD_KIT=1
 export DOCKER_CLI_EXPERIMENTAL=enabled
-export IMAGE_REGISTRY=gcr.io/anthos-networking-ci/k8s-conformance-kind
+export PROJECT="${GCP_PROJECT:-anthos-networking-ci}"
+export IMAGE_REGISTRY="gcr.io/${PROJECT}/k8s-conformance-kind"
 export CILIUM_TAG=cilium/cilium
 export CILIUM_OPERATOR_TAG=cilium/operator
 export CILIUM_OPERATOR_GENERIC_TAG=cilium/operator-generic
@@ -32,7 +33,7 @@ export HUBBLE_RELAY_TAG=cilium/hubble-relay
 export CLUSTERMESH_APISERVER_TAG=cilium/clustermesh-apiserver
 export HTTPS_PROXY=http://localhost:8118
 export HTTP_PROXY=http://localhost:8118
-export ACCOUNT_NAME=anthos-networking-ci-runner@anthos-networking-ci.iam.gserviceaccount.com
+export ACCOUNT_NAME="anthos-networking-ci-runner@${PROJECT}.iam.gserviceaccount.com"
 
 echo "  ARTIFACTS        = ${ARTIFACTS}"
 echo "  KUBETEST2_RUN_ID = ${KUBETEST2_RUN_ID}"
@@ -70,16 +71,6 @@ done
 # Access the created kind cluster and get the cluster name
 CLUSTER_NAME=$(kubectl config get-contexts --kubeconfig "${KUBECONFIG}" | grep kind- | tr -s ' ' | cut -d " " -f 2 | cut -d "-" -f 2)
 
-# This function delete all existing SA key generated due to limited number allowed for each SA.
-function clean_up_user_generated_SA_keys {
-    echo "Deleting all user generated SA keys associated with ${ACCOUNT_NAME}"
-    gcloud iam service-accounts keys list --iam-account="${ACCOUNT_NAME}" | tail -n +2 | cat | while read -r a; do
-        export KEY_ID="${a:0:40}"
-        echo "${KEY_ID}"
-        (gcloud iam service-accounts keys delete "${KEY_ID}" --iam-account="${ACCOUNT_NAME}" --quiet)
-    done
-}
-
 # This function installs kind to get logs from kind cluster.
 function get_log_from_kind_cluster {
     # Obtain hostmachine ip and username
@@ -100,8 +91,6 @@ function clean_up_before_exit {
     mv /home/prow/go/src/gke-internal.googlesource.com/third_party/cilium/cilium-sysdump-final.zip "${ARTIFACTS}"
     # This function get logs from kind cluster.
     get_log_from_kind_cluster
-    # This function delete all existing SA key generated due to limited number allowed for each SA.
-    clean_up_user_generated_SA_keys
 }
 
 trap clean_up_before_exit EXIT
@@ -112,9 +101,9 @@ kubectl delete ds kindnet -n kube-system
 
 # Generate k8s secret from eligible SA for pulling images from GCR.
 export ACCOUNT_KEY=${ACCOUNT_NAME}-key.json
-gcloud iam service-accounts keys create "${ACCOUNT_KEY}" --iam-account="${ACCOUNT_NAME}"
 export SECRETNAME=gcr-pull-secret
-kubectl create secret -n kube-system docker-registry "${SECRETNAME}" --docker-server=https://gcr.io --docker-username=_json_key --docker-email="${ACCOUNT_NAME}" --docker-password="$(cat "${ACCOUNT_KEY}")"
+gcloud secrets versions access latest --secret=anthos-networking-ci-runner-gcr-pull-secret --project="${PROJECT}" > "${ACCOUNT_KEY}"
+kubectl create secret generic --type=kubernetes.io/dockerconfigjson -n kube-system "${SECRETNAME}" --from-file=.dockerconfigjson="${ACCOUNT_KEY}"
 
 # Install Cilium CLI
 curl -sSL --remote-name-all https://github.com/cilium/cilium-cli/releases/download/"${CILIUM_CLI_VERSION}"/cilium-linux-amd64.tar.gz{,.sha256sum}
