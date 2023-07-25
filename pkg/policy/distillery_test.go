@@ -1293,15 +1293,19 @@ var (
 			},
 		},
 	}).WithEndpointSelector(api.WildcardEndpointSelector)
-	mapKeyL3L4Port8080ProtoTCPWorldIngress = Key{worldReservedID, 8080, 6, trafficdirection.Ingress.Uint8()}
-	mapKeyL3L4Port8080ProtoTCPWorldEgress  = Key{worldReservedID, 8080, 6, trafficdirection.Egress.Uint8()}
-	mapKeyL3L4Port8080ProtoUDPWorldIngress = Key{worldReservedID, 8080, 17, trafficdirection.Ingress.Uint8()}
-	mapKeyL3L4Port8080ProtoUDPWorldEgress  = Key{worldReservedID, 8080, 17, trafficdirection.Egress.Uint8()}
+	mapKeyL3L4Port8080ProtoTCPWorldIngress  = Key{worldReservedID, 8080, 6, trafficdirection.Ingress.Uint8()}
+	mapKeyL3L4Port8080ProtoTCPWorldEgress   = Key{worldReservedID, 8080, 6, trafficdirection.Egress.Uint8()}
+	mapKeyL3L4Port8080ProtoUDPWorldIngress  = Key{worldReservedID, 8080, 17, trafficdirection.Ingress.Uint8()}
+	mapKeyL3L4Port8080ProtoUDPWorldEgress   = Key{worldReservedID, 8080, 17, trafficdirection.Egress.Uint8()}
+	mapKeyL3L4Port8080ProtoSCTPWorldIngress = Key{worldReservedID, 8080, 132, trafficdirection.Ingress.Uint8()}
+	mapKeyL3L4Port8080ProtoSCTPWorldEgress  = Key{worldReservedID, 8080, 132, trafficdirection.Egress.Uint8()}
 
-	mapKeyL3L4Port8080ProtoTCPWorldSNIngress = Key{worldSubnetIdentity.Uint32(), 8080, 6, trafficdirection.Ingress.Uint8()}
-	mapKeyL3L4Port8080ProtoTCPWorldSNEgress  = Key{worldSubnetIdentity.Uint32(), 8080, 6, trafficdirection.Egress.Uint8()}
-	mapKeyL3L4Port8080ProtoUDPWorldSNIngress = Key{worldSubnetIdentity.Uint32(), 8080, 17, trafficdirection.Ingress.Uint8()}
-	mapKeyL3L4Port8080ProtoUDPWorldSNEgress  = Key{worldSubnetIdentity.Uint32(), 8080, 17, trafficdirection.Egress.Uint8()}
+	mapKeyL3L4Port8080ProtoTCPWorldSNIngress  = Key{worldSubnetIdentity.Uint32(), 8080, 6, trafficdirection.Ingress.Uint8()}
+	mapKeyL3L4Port8080ProtoTCPWorldSNEgress   = Key{worldSubnetIdentity.Uint32(), 8080, 6, trafficdirection.Egress.Uint8()}
+	mapKeyL3L4Port8080ProtoUDPWorldSNIngress  = Key{worldSubnetIdentity.Uint32(), 8080, 17, trafficdirection.Ingress.Uint8()}
+	mapKeyL3L4Port8080ProtoUDPWorldSNEgress   = Key{worldSubnetIdentity.Uint32(), 8080, 17, trafficdirection.Egress.Uint8()}
+	mapKeyL3L4Port8080ProtoSCTPWorldSNIngress = Key{worldSubnetIdentity.Uint32(), 8080, 132, trafficdirection.Ingress.Uint8()}
+	mapKeyL3L4Port8080ProtoSCTPWorldSNEgress  = Key{worldSubnetIdentity.Uint32(), 8080, 132, trafficdirection.Egress.Uint8()}
 
 	ruleL3AllowWorldSubnet = api.NewRule().WithIngressRules([]api.IngressRule{{
 		ToPorts: api.PortRules{
@@ -1348,14 +1352,17 @@ var (
 	mapKeyL4Port8080ProtoTCPWorldIPEgress        = Key{worldIPIdentity.Uint32(), 8080, 6, trafficdirection.Egress.Uint8()}
 	mapKeyL4Port8080ProtoUDPWorldIPIngress       = Key{worldIPIdentity.Uint32(), 8080, 17, trafficdirection.Ingress.Uint8()}
 	mapKeyL4Port8080ProtoUDPWorldIPEgress        = Key{worldIPIdentity.Uint32(), 8080, 17, trafficdirection.Egress.Uint8()}
+	mapKeyL4Port8080ProtoSCTPWorldIPIngress      = Key{worldIPIdentity.Uint32(), 8080, 132, trafficdirection.Ingress.Uint8()}
+	mapKeyL4Port8080ProtoSCTPWorldIPEgress       = Key{worldIPIdentity.Uint32(), 8080, 132, trafficdirection.Egress.Uint8()}
 	mapEntryL4SubnetPort8080ProtoAnyIngressAllow = MapStateEntry{
 		ProxyPort:        0,
 		IsDeny:           true,
 		DerivedFromRules: labels.LabelArrayList{nil},
 		owners:           map[MapStateOwner]struct{}{},
 		dependents: Keys{
-			mapKeyL4Port8080ProtoTCPWorldIPIngress: struct{}{},
-			mapKeyL4Port8080ProtoUDPWorldIPIngress: struct{}{},
+			mapKeyL4Port8080ProtoTCPWorldIPIngress:  struct{}{},
+			mapKeyL4Port8080ProtoUDPWorldIPIngress:  struct{}{},
+			mapKeyL4Port8080ProtoSCTPWorldIPIngress: struct{}{},
 		},
 	}
 	mapEntryL4SubnetPort8080ProtoAnyEgressAllow = MapStateEntry{
@@ -1364,8 +1371,9 @@ var (
 		DerivedFromRules: labels.LabelArrayList{nil},
 		owners:           map[MapStateOwner]struct{}{},
 		dependents: Keys{
-			mapKeyL4Port8080ProtoTCPWorldIPEgress: struct{}{},
-			mapKeyL4Port8080ProtoUDPWorldIPEgress: struct{}{},
+			mapKeyL4Port8080ProtoTCPWorldIPEgress:  struct{}{},
+			mapKeyL4Port8080ProtoUDPWorldIPEgress:  struct{}{},
+			mapKeyL4Port8080ProtoSCTPWorldIPEgress: struct{}{},
 		},
 	}
 )
@@ -1399,30 +1407,38 @@ func Test_EnsureDeniesPrecedeAllows(t *testing.T) {
 			mapKeyL3SubnetIngress:        mapEntryAllow,
 			mapKeyL3SubnetEgress:         mapEntryAllow,
 		}}, {"broad_deny_is_a_portproto_subset_of_a_specific_allow", api.Rules{ruleL3L4Port8080ProtoAnyDenyWorld, ruleL3AllowWorldIP}, MapState{
-			mapKeyL3L4Port8080ProtoTCPWorldIngress:   mapEntryDeny,
-			mapKeyL3L4Port8080ProtoTCPWorldEgress:    mapEntryDeny,
-			mapKeyL3L4Port8080ProtoUDPWorldIngress:   mapEntryDeny,
-			mapKeyL3L4Port8080ProtoUDPWorldEgress:    mapEntryDeny,
-			mapKeyL3SmallerSubnetIngress:             mapEntryAllow,
-			mapKeyL3SmallerSubnetEgress:              mapEntryAllow,
-			mapKeyL3L4Port8080ProtoTCPWorldSNIngress: mapEntryDeny,
-			mapKeyL3L4Port8080ProtoTCPWorldSNEgress:  mapEntryDeny,
-			mapKeyL3L4Port8080ProtoUDPWorldSNIngress: mapEntryDeny,
-			mapKeyL3L4Port8080ProtoUDPWorldSNEgress:  mapEntryDeny,
+			mapKeyL3L4Port8080ProtoTCPWorldIngress:    mapEntryDeny,
+			mapKeyL3L4Port8080ProtoTCPWorldEgress:     mapEntryDeny,
+			mapKeyL3L4Port8080ProtoUDPWorldIngress:    mapEntryDeny,
+			mapKeyL3L4Port8080ProtoUDPWorldEgress:     mapEntryDeny,
+			mapKeyL3L4Port8080ProtoSCTPWorldIngress:   mapEntryDeny,
+			mapKeyL3L4Port8080ProtoSCTPWorldEgress:    mapEntryDeny,
+			mapKeyL3SmallerSubnetIngress:              mapEntryAllow,
+			mapKeyL3SmallerSubnetEgress:               mapEntryAllow,
+			mapKeyL3L4Port8080ProtoTCPWorldSNIngress:  mapEntryDeny,
+			mapKeyL3L4Port8080ProtoTCPWorldSNEgress:   mapEntryDeny,
+			mapKeyL3L4Port8080ProtoUDPWorldSNIngress:  mapEntryDeny,
+			mapKeyL3L4Port8080ProtoUDPWorldSNEgress:   mapEntryDeny,
+			mapKeyL3L4Port8080ProtoSCTPWorldSNIngress: mapEntryDeny,
+			mapKeyL3L4Port8080ProtoSCTPWorldSNEgress:  mapEntryDeny,
 		}},
 		{"broad_allow_is_a_portproto_subset_of_a_specific_deny", api.Rules{ruleL3AllowWorldSubnet, ruleL3DenyWorldIP}, MapState{
 
-			mapKeyL3L4Port8080ProtoTCPWorldSNIngress: mapEntryAllow,
-			mapKeyL3L4Port8080ProtoTCPWorldSNEgress:  mapEntryAllow,
-			mapKeyL3L4Port8080ProtoUDPWorldSNIngress: mapEntryAllow,
-			mapKeyL3L4Port8080ProtoUDPWorldSNEgress:  mapEntryAllow,
+			mapKeyL3L4Port8080ProtoTCPWorldSNIngress:  mapEntryAllow,
+			mapKeyL3L4Port8080ProtoTCPWorldSNEgress:   mapEntryAllow,
+			mapKeyL3L4Port8080ProtoUDPWorldSNIngress:  mapEntryAllow,
+			mapKeyL3L4Port8080ProtoUDPWorldSNEgress:   mapEntryAllow,
+			mapKeyL3L4Port8080ProtoSCTPWorldSNIngress: mapEntryAllow,
+			mapKeyL3L4Port8080ProtoSCTPWorldSNEgress:  mapEntryAllow,
 
-			mapKeyL4Port8080ProtoAnyWorldIPIngress: mapEntryL4SubnetPort8080ProtoAnyIngressAllow,
-			mapKeyL4Port8080ProtoAnyWorldIPEgress:  mapEntryL4SubnetPort8080ProtoAnyEgressAllow,
-			mapKeyL4Port8080ProtoTCPWorldIPIngress: mapEntryDeny,
-			mapKeyL4Port8080ProtoTCPWorldIPEgress:  mapEntryDeny,
-			mapKeyL4Port8080ProtoUDPWorldIPIngress: mapEntryDeny,
-			mapKeyL4Port8080ProtoUDPWorldIPEgress:  mapEntryDeny,
+			mapKeyL4Port8080ProtoAnyWorldIPIngress:  mapEntryL4SubnetPort8080ProtoAnyIngressAllow,
+			mapKeyL4Port8080ProtoAnyWorldIPEgress:   mapEntryL4SubnetPort8080ProtoAnyEgressAllow,
+			mapKeyL4Port8080ProtoTCPWorldIPIngress:  mapEntryDeny,
+			mapKeyL4Port8080ProtoTCPWorldIPEgress:   mapEntryDeny,
+			mapKeyL4Port8080ProtoUDPWorldIPIngress:  mapEntryDeny,
+			mapKeyL4Port8080ProtoUDPWorldIPEgress:   mapEntryDeny,
+			mapKeyL4Port8080ProtoSCTPWorldIPIngress: mapEntryDeny,
+			mapKeyL4Port8080ProtoSCTPWorldIPEgress:  mapEntryDeny,
 		}},
 	}
 	for _, tt := range tests {
