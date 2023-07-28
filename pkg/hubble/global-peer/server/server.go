@@ -14,6 +14,7 @@ import (
 	"github.com/cilium/cilium/pkg/hubble/peer"
 	"github.com/cilium/cilium/pkg/hubble/peer/serviceoption"
 	peerTypes "github.com/cilium/cilium/pkg/hubble/peer/types"
+	"github.com/cilium/cilium/pkg/hubble/relay/defaults"
 	"github.com/cilium/cilium/pkg/hubble/server"
 	"github.com/cilium/cilium/pkg/hubble/server/serveroption"
 	"github.com/cilium/cilium/pkg/k8s"
@@ -47,15 +48,21 @@ func New(log logrus.FieldLogger, opts Options) (*Server, error) {
 		return nil, err
 	}
 
-	// TODO(b/277353950): pass TLS info to the client
-	peerSvc := peer.NewService(globalPeerNotifier, serviceoption.WithoutTLSInfo())
+	peerOpts := []serviceoption.Option{}
+	if opts.NoTLS {
+		peerOpts = append(peerOpts, serviceoption.WithoutTLSInfo())
+	}
+	peerSvc := peer.NewService(globalPeerNotifier, peerOpts...)
 
 	address := opts.ListenAddress
-	// TODO(b/277353950): pass TLS info to the server
 	srvOptions := []serveroption.Option{
 		serveroption.WithTCPListener(address),
 		serveroption.WithPeerService(peerSvc),
-		serveroption.WithInsecure(),
+	}
+	if opts.NoTLS {
+		srvOptions = append(srvOptions, serveroption.WithInsecure())
+	} else {
+		srvOptions = append(srvOptions, serveroption.WithServerTLS(opts.ServerTLSConfig))
 	}
 	srvLog := logging.DefaultLogger.WithField(logfields.LogSubsys, "hubble-server")
 	srv, err := server.NewServer(srvLog, srvOptions...)
@@ -99,6 +106,10 @@ func (s *Server) Run(ctx context.Context) error {
 		s.log.WithField("address", s.opts.PeerTarget).Info("Starting client to local Hubble Peer")
 		peerClientBuilder := &peerTypes.RemoteClientBuilder{
 			DialTimeout: s.opts.DialTimeout,
+		}
+		if !s.opts.NoTLS {
+			peerClientBuilder.TLSConfig = s.opts.ClientTLSConfig
+			peerClientBuilder.TLSServerName = peer.TLSServerName(defaults.PeerServiceName, s.opts.ClusterName)
 		}
 		return s.peerNotifier.watchNotifications(localCtx, peerClientBuilder)
 	})

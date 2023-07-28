@@ -3,13 +3,20 @@
 
 package server
 
-import "time"
+import (
+	"time"
+
+	"github.com/cilium/cilium/pkg/crypto/certloader"
+)
 
 // Options stores all the configuration values for the global-peer server.
 type Options struct {
-	ListenAddress string
-	ClusterName   string
-	PeerTarget    string
-	DialTimeout   time.Duration
-	RetryTimeout  time.Duration
+	ListenAddress   string
+	ClusterName     string
+	PeerTarget      string
+	DialTimeout     time.Duration
+	RetryTimeout    time.Duration
+	NoTLS           bool
+	ClientTLSConfig certloader.ClientConfigBuilder
+	ServerTLSConfig certloader.ServerConfigBuilder
 }
