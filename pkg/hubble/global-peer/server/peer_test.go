@@ -12,9 +12,11 @@ import (
 	"github.com/cilium/cilium/pkg/datapath/fake"
 	v1 "github.com/cilium/cilium/pkg/gke/apis/nodepool/v1"
 	"github.com/cilium/cilium/pkg/node/types"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 )
 
@@ -34,24 +36,45 @@ var (
 	updateNodes = allNodes[:2]
 
 	baseNodePool = &v1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "base-cluster-nodepool",
+		},
 		Spec: v1.NodePoolSpec{
 			ClusterName: "base-cluster-name",
 			Nodes:       allNodes,
 		},
 	}
 	updateNodePool = &v1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "base-cluster-nodepool",
+		},
 		Spec: v1.NodePoolSpec{
 			ClusterName: "base-cluster-name",
 			Nodes:       updateNodes,
 		},
 	}
+	secondNodePool = &v1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "base-cluster-nodepool-second",
+		},
+		Spec: v1.NodePoolSpec{
+			ClusterName: "base-cluster-name",
+			Nodes:       allNodes[2:],
+		},
+	}
 	emptyNodePool = &v1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "base-cluster-nodepool",
+		},
 		Spec: v1.NodePoolSpec{
 			ClusterName: "base-cluster-name",
 		},
 	}
 
 	differentNodePool = &v1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "different-cluster-nodepool-1",
+		},
 		Spec: v1.NodePoolSpec{
 			ClusterName: "different-cluster-name",
 			Nodes: []v1.Node{
@@ -60,6 +83,9 @@ var (
 		},
 	}
 	differentNodePoolDuplicateNode = &v1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "different-cluster-nodepool",
+		},
 		Spec: v1.NodePoolSpec{
 			ClusterName: "different-cluster-name",
 			Nodes:       allNodes[:1],
@@ -67,6 +93,11 @@ var (
 	}
 
 	initialNodes = map[string]types.Node{
+		"10.0.0.1": v1ToNode(baseNodePool.Spec.ClusterName, allNodes[0].Address),
+		"10.0.0.3": v1ToNode(baseNodePool.Spec.ClusterName, *allNodes[1].K8sIP),
+		"10.0.0.4": v1ToNode(baseNodePool.Spec.ClusterName, allNodes[2].Address),
+	}
+	twoPoolsNodes = map[string]types.Node{
 		"10.0.0.1": v1ToNode(baseNodePool.Spec.ClusterName, allNodes[0].Address),
 		"10.0.0.3": v1ToNode(baseNodePool.Spec.ClusterName, *allNodes[1].K8sIP),
 		"10.0.0.4": v1ToNode(baseNodePool.Spec.ClusterName, allNodes[2].Address),
@@ -99,7 +130,7 @@ func TestGlobalPeerNotifier_Add(t *testing.T) {
 	gp := newGlobalPeerNotifier(logger)
 
 	gp.nodePoolAdd(baseNodePool)
-	if diff := cmp.Diff(gp.nodes, initialNodes); diff != "" {
+	if diff := cmp.Diff(initialNodes, gp.nodes); diff != "" {
 		t.Fatalf("Mismatch after processing initial NodePoolAdd (-want, +got):\n%v", diff)
 	}
 }
@@ -112,49 +143,57 @@ func TestGlobalPeerNotifier_UpdateTwiceHasNoEffect(t *testing.T) {
 	}
 
 	gp.nodePoolUpdate(baseNodePool, updateNodePool)
-	if diff := cmp.Diff(gp.nodes, afterNodeUpdate); diff != "" {
+	if diff := cmp.Diff(afterNodeUpdate, gp.nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 	}
 
 	gp.nodePoolUpdate(baseNodePool, updateNodePool)
-	if diff := cmp.Diff(gp.nodes, afterNodeUpdate); diff != "" {
+	if diff := cmp.Diff(afterNodeUpdate, gp.nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 	}
 }
 
 func TestGlobalPeerNotifier_Update(t *testing.T) {
 	testcases := []struct {
-		name          string
-		before, after map[string]types.Node
-		old, curr     *v1.NodePool
+		name      string
+		before    *v1.NodePool
+		after     map[string]types.Node
+		old, curr *v1.NodePool
 	}{
 		{
 			name:   "Add new node (with correct old entry)",
-			before: initialNodes,
+			before: baseNodePool,
 			old:    baseNodePool,
 			curr:   updateNodePool,
 			after:  afterNodeUpdate,
 		},
 		{
 			name:   "Add new node (without old entry)",
-			before: initialNodes,
+			before: baseNodePool,
 			old:    emptyNodePool,
 			curr:   updateNodePool,
 			after:  afterNodeUpdate,
 		},
 		{
 			name:   "Duplicate node from different cluster has no effect",
-			before: afterNodeUpdate,
+			before: updateNodePool,
 			old:    differentNodePool,
 			curr:   differentNodePoolDuplicateNode,
 			after:  afterNodeUpdate,
 		},
 		{
 			name:   "Unexpected cluster name change is still processed",
-			before: afterNodeUpdate,
+			before: updateNodePool,
 			old:    emptyNodePool,
 			curr:   differentNodePool,
 			after:  afterNodeUpdateWithDifferentCluster,
+		},
+		{
+			name:   "Cluster can consist of multiple node pools",
+			before: updateNodePool,
+			old:    emptyNodePool,
+			curr:   secondNodePool,
+			after:  twoPoolsNodes,
 		},
 	}
 
@@ -162,12 +201,12 @@ func TestGlobalPeerNotifier_Update(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			logger, _ := test.NewNullLogger()
 			gp := newGlobalPeerNotifier(logger)
-			for k, v := range tc.before {
-				gp.nodes[k] = v
-			}
+
+			// Populate NodePools and nodes.
+			gp.nodePoolAdd(tc.before)
 
 			gp.nodePoolUpdate(tc.old, tc.curr)
-			if diff := cmp.Diff(gp.nodes, tc.after); diff != "" {
+			if diff := cmp.Diff(tc.after, gp.nodes); diff != "" {
 				t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 			}
 		})
@@ -177,17 +216,19 @@ func TestGlobalPeerNotifier_Update(t *testing.T) {
 func TestGlobalPeerNotifier_Delete(t *testing.T) {
 	logger, _ := test.NewNullLogger()
 	gp := newGlobalPeerNotifier(logger)
-	for k, v := range afterNodeUpdateWithDifferentCluster {
-		gp.nodes[k] = v
+
+	// Populate NodePools and nodes.
+	for _, np := range []*v1.NodePool{updateNodePool, differentNodePool} {
+		gp.nodePoolAdd(np)
 	}
 
 	gp.nodePoolDelete(differentNodePool)
-	if diff := cmp.Diff(gp.nodes, afterNodeUpdate); diff != "" {
+	if diff := cmp.Diff(afterNodeUpdate, gp.nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolDelete (-want, +got):\n%v", diff)
 	}
 
 	gp.nodePoolDelete(baseNodePool)
-	if diff := cmp.Diff(gp.nodes, afterNodeDelete); diff != "" {
+	if diff := cmp.Diff(afterNodeDelete, gp.nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolDelete (-want, +got):\n%v", diff)
 	}
 }
@@ -200,17 +241,17 @@ func TestGlobalPeerNotifier_SubscribedFromStart(t *testing.T) {
 	gp.Subscribe(handler)
 
 	gp.nodePoolAdd(baseNodePool)
-	if diff := cmp.Diff(handler.Nodes, handlerInitialNodes); diff != "" {
+	if diff := cmp.Diff(handlerInitialNodes, handler.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing initial NodePoolAdd (-want, +got):\n%v", diff)
 	}
 
 	gp.nodePoolUpdate(baseNodePool, updateNodePool)
-	if diff := cmp.Diff(handler.Nodes, handlerAfterUpdateNodes); diff != "" {
+	if diff := cmp.Diff(handlerAfterUpdateNodes, handler.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 	}
 
 	gp.nodePoolDelete(baseNodePool)
-	if diff := cmp.Diff(handler.Nodes, afterNodeDelete); diff != "" {
+	if diff := cmp.Diff(afterNodeDelete, handler.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolDelete (-want, +got):\n%v", diff)
 	}
 }
@@ -231,12 +272,12 @@ func TestGlobalPeerNotifier_SubscribedAfterNew(t *testing.T) {
 	hasNodeCount := hasNodeCountFactory(handler)
 	gp.Subscribe(handler)
 	assert.Eventually(t, hasNodeCount(3), time.Minute, 10*time.Millisecond)
-	if diff := cmp.Diff(handler.Nodes, handlerInitialNodes); diff != "" {
+	if diff := cmp.Diff(handlerInitialNodes, handler.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing initial NodePoolAdd (-want, +got):\n%v", diff)
 	}
 
 	gp.nodePoolUpdate(baseNodePool, updateNodePool)
-	if diff := cmp.Diff(handler.Nodes, handlerAfterUpdateNodes); diff != "" {
+	if diff := cmp.Diff(handlerAfterUpdateNodes, handler.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 	}
 
@@ -255,7 +296,7 @@ func TestGlobalPeerNotifier_SubscribedAfterUpdate(t *testing.T) {
 	hasNodeCount := hasNodeCountFactory(handler)
 	gp.Subscribe(handler)
 	assert.Eventually(t, hasNodeCount(2), time.Minute, 10*time.Millisecond)
-	if diff := cmp.Diff(handler.Nodes, handlerAfterUpdateNodes); diff != "" {
+	if diff := cmp.Diff(handlerAfterUpdateNodes, handler.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 	}
 
@@ -273,7 +314,7 @@ func TestGlobalPeerNotifier_TwoHandlers(t *testing.T) {
 	hasNodeCountA := hasNodeCountFactory(handlerA)
 	gp.Subscribe(handlerA)
 	assert.Eventually(t, hasNodeCountA(3), time.Minute, 10*time.Millisecond)
-	if diff := cmp.Diff(handlerA.Nodes, handlerInitialNodes); diff != "" {
+	if diff := cmp.Diff(handlerInitialNodes, handlerA.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing initial NodePoolAdd (-want, +got):\n%v", diff)
 	}
 
@@ -283,10 +324,10 @@ func TestGlobalPeerNotifier_TwoHandlers(t *testing.T) {
 	gp.Subscribe(handlerB)
 	assert.Equal(t, 2, len(handlerA.Nodes))
 	assert.Eventually(t, hasNodeCountB(2), time.Minute, 10*time.Millisecond)
-	if diff := cmp.Diff(handlerA.Nodes, handlerAfterUpdateNodes); diff != "" {
+	if diff := cmp.Diff(handlerAfterUpdateNodes, handlerA.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 	}
-	if diff := cmp.Diff(handlerB.Nodes, handlerAfterUpdateNodes); diff != "" {
+	if diff := cmp.Diff(handlerAfterUpdateNodes, handlerB.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 	}
 
@@ -305,12 +346,12 @@ func TestGlobalPeerNotifier_Unsubscribe(t *testing.T) {
 	hasNodeCount := hasNodeCountFactory(handler)
 	gp.Subscribe(handler)
 	assert.Eventually(t, hasNodeCount(3), time.Minute, 10*time.Millisecond)
-	if diff := cmp.Diff(handler.Nodes, handlerInitialNodes); diff != "" {
+	if diff := cmp.Diff(handlerInitialNodes, handler.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing initial NodePoolAdd (-want, +got):\n%v", diff)
 	}
 
 	gp.nodePoolUpdate(baseNodePool, updateNodePool)
-	if diff := cmp.Diff(handler.Nodes, handlerAfterUpdateNodes); diff != "" {
+	if diff := cmp.Diff(handlerAfterUpdateNodes, handler.Nodes); diff != "" {
 		t.Fatalf("Mismatch after processing NodePoolUpdate (-want, +got):\n%v", diff)
 	}
 
@@ -349,28 +390,31 @@ func TestGlobalPeerNotifier_WithPeerNotifications(t *testing.T) {
 
 	t.Log("Add first peer")
 	cn <- &peerpb.ChangeNotification{
+		Name:    "192.0.1.1",
 		Address: "192.0.1.1",
 		Type:    peerpb.ChangeNotificationType_PEER_ADDED,
 	}
 	assert.Eventually(t, hasNodeCount(1), time.Minute, 10*time.Millisecond)
-	wantOne := map[string]types.Node{"node-192.0.1.1": v1ToNode("", "192.0.1.1")}
+	wantOne := map[string]types.Node{"192.0.1.1": v1ToNode("", "192.0.1.1")}
 	if diff := cmp.Diff(handler.Nodes, wantOne); diff != "" {
 		t.Fatalf("Mismatch after processing PEER_ADDED (-want, +got):\n%v", diff)
 	}
 
 	t.Log("Add first peer again and another one")
 	cn <- &peerpb.ChangeNotification{
+		Name:    "192.0.1.1",
 		Address: "192.0.1.1",
 		Type:    peerpb.ChangeNotificationType_PEER_ADDED,
 	}
 	cn <- &peerpb.ChangeNotification{
+		Name:    "192.0.1.2",
 		Address: "192.0.1.2",
 		Type:    peerpb.ChangeNotificationType_PEER_ADDED,
 	}
 	assert.Eventually(t, hasNodeCount(2), time.Minute, 10*time.Millisecond)
 	wantTwo := map[string]types.Node{
-		"node-192.0.1.1": v1ToNode("", "192.0.1.1"),
-		"node-192.0.1.2": v1ToNode("", "192.0.1.2"),
+		"192.0.1.1": v1ToNode("", "192.0.1.1"),
+		"192.0.1.2": v1ToNode("", "192.0.1.2"),
 	}
 	if diff := cmp.Diff(handler.Nodes, wantTwo); diff != "" {
 		t.Fatalf("Mismatch after processing PEER_ADDED again (-want, +got):\n%v", diff)
@@ -378,6 +422,7 @@ func TestGlobalPeerNotifier_WithPeerNotifications(t *testing.T) {
 
 	t.Log("Remove second peer")
 	cn <- &peerpb.ChangeNotification{
+		Name:    "192.0.1.2",
 		Address: "192.0.1.2",
 		Type:    peerpb.ChangeNotificationType_PEER_DELETED,
 	}
@@ -386,16 +431,26 @@ func TestGlobalPeerNotifier_WithPeerNotifications(t *testing.T) {
 		t.Fatalf("Mismatch after processing PEER_DELETED (-want, +got):\n%v", diff)
 	}
 
+	lateHandler := fake.NewNodeHandler()
+	gp.Subscribe(lateHandler)
+	hasLateNodeCount := func(count int) func() bool {
+		return func() bool { return count == len(handler.Nodes) }
+	}
+	assert.Eventually(t, hasLateNodeCount(1), time.Minute, 10*time.Millisecond)
+
 	t.Log("Remove second peer again, first one, and nonexistent")
 	cn <- &peerpb.ChangeNotification{
+		Name:    "192.0.1.2",
 		Address: "192.0.1.2",
 		Type:    peerpb.ChangeNotificationType_PEER_DELETED,
 	}
 	cn <- &peerpb.ChangeNotification{
+		Name:    "192.0.1.1",
 		Address: "192.0.1.1",
 		Type:    peerpb.ChangeNotificationType_PEER_DELETED,
 	}
 	cn <- &peerpb.ChangeNotification{
+		Name:    "192.0.1.0",
 		Address: "192.0.1.0",
 		Type:    peerpb.ChangeNotificationType_PEER_DELETED,
 	}

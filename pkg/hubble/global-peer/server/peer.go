@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"path"
+	"sort"
 	"time"
 
 	peerpb "github.com/cilium/cilium/api/v1/peer"
@@ -35,15 +37,25 @@ type globalPeerNotifier struct {
 	// mux protects fields below
 	mux      *lock.Mutex
 	handlers []datapath.NodeHandler
+
+	// nodePools is a map of cluster names to map of node pool names to list of nodes.
+	nodePools map[string]map[string][]v1.Node
+
 	// nodes is a map of the node's k8s IP to the node itself.
 	nodes map[string]types.Node
+
+	// localNodes is a map of the node's IP to the node itself.
+	// It is used for nodes received from peer interface.
+	localNodes map[string]types.Node
 }
 
 func newGlobalPeerNotifier(log logrus.FieldLogger) *globalPeerNotifier {
 	return &globalPeerNotifier{
-		log:   log,
-		mux:   new(lock.Mutex),
-		nodes: make(map[string]types.Node),
+		log:        log,
+		mux:        new(lock.Mutex),
+		nodePools:  make(map[string]map[string][]v1.Node),
+		nodes:      make(map[string]types.Node),
+		localNodes: make(map[string]types.Node),
 	}
 }
 
@@ -80,21 +92,96 @@ func (gp *globalPeerNotifier) nodePoolAdd(obj interface{}) {
 		).Error("NodePool to add has an unexpected type")
 		return
 	}
+	if np.Name == "" {
+		gp.log.Error("Missing Name from the NodePool add")
+		return
+	}
 	gp.log.WithField("NodePool.Spec", np.Spec).Debug("Processing NodePool add")
 
 	gp.mux.Lock()
 	defer gp.mux.Unlock()
 	clusterName := np.Spec.ClusterName
-	for _, node := range np.Spec.Nodes {
-		addr := node.GetK8sIP()
-		if old, exists := gp.nodes[addr]; exists {
-			if old.Cluster == clusterName {
-				// Node was already processed
-				continue
+
+	if _, ok := gp.nodePools[clusterName]; !ok {
+		gp.nodePools[clusterName] = make(map[string][]v1.Node)
+	}
+	if _, ok := gp.nodePools[clusterName][np.Name]; ok {
+		gp.log.WithField("NodePool.Name", np.Name).Warn("Replacing existing node pool in NodePool add")
+	}
+
+	gp.nodePools[clusterName][np.Name] = np.Spec.Nodes
+	gp.processNodeChanges()
+}
+
+// nodePoolsToMap processes all node pools in an alphabetic order (cluster name
+// then node pool name) and creates a map of nodes from it. When duplicate node
+// is detected, an older one takes precedence.
+func (gp *globalPeerNotifier) nodePoolsToMap() map[string]types.Node {
+	curr := make(map[string]types.Node)
+
+	clusterKeys := make([]string, 0, len(gp.nodePools))
+	for k := range gp.nodePools {
+		clusterKeys = append(clusterKeys, k)
+	}
+	sort.Strings(clusterKeys)
+
+	for _, clusterKey := range clusterKeys {
+		nodePools := gp.nodePools[clusterKey]
+
+		nodePoolKeys := make([]string, 0, len(nodePools))
+		for k := range nodePools {
+			nodePoolKeys = append(nodePoolKeys, k)
+		}
+		sort.Strings(nodePoolKeys)
+
+		for _, nodePoolKey := range nodePoolKeys {
+			nodePool := nodePools[nodePoolKey]
+			for _, node := range nodePool {
+				addr := node.GetK8sIP()
+				if _, ok := curr[addr]; ok {
+					// Do not overwrite nodes.
+					continue
+				}
+				curr[addr] = v1ToNode(clusterKey, addr)
 			}
 		}
-		gp.addNode(clusterName, addr)
 	}
+	return curr
+}
+
+func (gp *globalPeerNotifier) processNodeChanges() {
+	curr := gp.nodePoolsToMap()
+	old := gp.nodes
+
+	// Process removed nodes.
+	for addr, node := range old {
+		if _, ok := curr[addr]; !ok {
+			gp.removeNode(node)
+		}
+	}
+
+	// Process added nodes.
+	for addr, node := range curr {
+		if _, ok := old[addr]; !ok {
+			gp.addNode(node)
+		}
+	}
+
+	gp.nodes = curr
+}
+
+func checkNodeListsEqual(a, b []v1.Node) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sort.Slice(a, func(i, j int) bool { return a[i].Address < a[j].Address })
+	sort.Slice(b, func(i, j int) bool { return b[i].Address < b[j].Address })
+	for i := range a {
+		if a[i].Address != b[i].Address {
+			return false
+		}
+	}
+	return true
 }
 
 func (gp *globalPeerNotifier) nodePoolUpdate(old, curr interface{}) {
@@ -106,6 +193,10 @@ func (gp *globalPeerNotifier) nodePoolUpdate(old, curr interface{}) {
 		return
 	}
 	clusterName := np.Spec.ClusterName
+	if np.Name == "" {
+		gp.log.Error("Missing Name from the NodePool update")
+		return
+	}
 
 	// Processing relies on internal state instead of contents of old NodePool.
 	// Print warnings and keep processing.
@@ -123,57 +214,21 @@ func (gp *globalPeerNotifier) nodePoolUpdate(old, curr interface{}) {
 	}
 	gp.log.WithField("NodePool.Spec", np.Spec).Debug("Processing NodePool update")
 
-	// Convert slice of nodes from new version for fast checking by addr.
-	after := nodeSliceToMap(np.Spec.Nodes)
-
 	gp.mux.Lock()
 	defer gp.mux.Unlock()
 
-	deleted, added := 0, 0
-	for addr, node := range gp.nodes {
-		// Skip nodes that are not part of this Cluster.
-		if node.Cluster != clusterName {
-			continue
-		}
-		// Skip nodes which state didn't change.
-		if after[addr] {
-			continue
-		}
-		// Deleted node.
-		gp.removeNode(clusterName, addr)
-		deleted++
+	if _, ok := gp.nodePools[clusterName]; !ok {
+		gp.nodePools[clusterName] = make(map[string][]v1.Node)
 	}
-	for addr := range after {
-		// Skip nodes which were already added to the pool.
-		if old, ok := gp.nodes[addr]; ok {
-			if old.Cluster != clusterName {
-				gp.log.WithFields(logrus.Fields{
-					"nodeAddr":   addr,
-					"oldCluster": old.Cluster,
-					"newCluster": clusterName,
-				}).Warnf("Ignoring entry duplicated across clusters")
-			}
-			continue
-		}
-		// New node.
-		gp.addNode(clusterName, addr)
-		added++
+	if oldNodes, ok := gp.nodePools[clusterName][np.Name]; !ok {
+		gp.log.WithField("NodePool.Name", np.Name).Warn("Adding a new node pool in NodePool update")
+	} else if checkNodeListsEqual(oldNodes, np.Spec.Nodes) {
+		gp.log.Debug("No changes to nodes list. Ignoring NodePool update")
+		return
 	}
-	if deleted+added > 0 {
-		gp.log.WithFields(logrus.Fields{
-			"deleted": deleted,
-			"added":   added,
-		}).Info("Modified nodes during NodePool update")
-	}
-}
 
-func nodeSliceToMap(nodes []v1.Node) map[string]bool {
-	ret := make(map[string]bool)
-	for _, node := range nodes {
-		addr := node.GetK8sIP()
-		ret[addr] = true
-	}
-	return ret
+	gp.nodePools[clusterName][np.Name] = np.Spec.Nodes
+	gp.processNodeChanges()
 }
 
 func (gp *globalPeerNotifier) nodePoolDelete(obj interface{}) {
@@ -184,36 +239,41 @@ func (gp *globalPeerNotifier) nodePoolDelete(obj interface{}) {
 		).Error("NodePool to delete has an unexpected type")
 		return
 	}
+	if np.Name == "" {
+		gp.log.Error("Missing Name from the NodePool delete")
+		return
+	}
+	clusterName := np.Spec.ClusterName
+	if clusterName == "" {
+		gp.log.Error("Missing ClusterName from the NodePool delete")
+		return
+	}
 	gp.log.WithField("NodePool.Spec", np.Spec).Debug("Processing NodePool delete")
 
 	gp.mux.Lock()
 	defer gp.mux.Unlock()
-	deleted := 0
-	for _, node := range np.Spec.Nodes {
-		addr := node.GetK8sIP()
-		if _, ok := gp.nodes[addr]; !ok {
-			// Node was already processed
-			continue
-		}
-		gp.removeNode(np.Spec.ClusterName, addr)
-		deleted++
+
+	if _, ok := gp.nodePools[clusterName]; !ok {
+		gp.nodePools[clusterName] = make(map[string][]v1.Node)
 	}
-	if deleted > 0 {
-		gp.log.WithField("deleted", deleted).Info("Modified nodes during NodePool remove")
+	if _, ok := gp.nodePools[clusterName][np.Name]; !ok {
+		gp.log.WithField("NodePool.Name", np.Name).Warn("Removing a deleted node pool in NodePool delete")
 	}
+
+	delete(gp.nodePools[clusterName], np.Name)
+	gp.processNodeChanges()
 }
 
-func (gp *globalPeerNotifier) removeNode(clusterName, addr string) {
-	delete(gp.nodes, addr)
-	gp.log.WithField("nodeAddr", addr).Debug("Sending node delete to subscribers")
+func (gp *globalPeerNotifier) removeNode(node types.Node) {
+	gp.log.WithField("nodeName", node.Name).Debug("Sending node delete to subscribers")
 	for _, handler := range gp.handlers {
-		handler.NodeDelete(v1ToNode(clusterName, addr))
+		handler.NodeDelete(node)
 	}
 }
 
 func v1ToNode(clusterName, addr string) types.Node {
 	return types.Node{
-		Name:    "node-" + addr,
+		Name:    addr,
 		Cluster: clusterName,
 		IPAddresses: []types.Address{{
 			Type: addressing.NodeExternalIP,
@@ -222,13 +282,10 @@ func v1ToNode(clusterName, addr string) types.Node {
 	}
 }
 
-func (gp *globalPeerNotifier) addNode(clusterName, addr string) {
-	newNode := v1ToNode(clusterName, addr)
-	gp.nodes[addr] = newNode
-
-	gp.log.WithField("nodeAddr", addr).Debug("Sending node add to subscribers")
+func (gp *globalPeerNotifier) addNode(node types.Node) {
+	gp.log.WithField("nodeName", node.Name).Debug("Sending node add to subscribers")
 	for _, handler := range gp.handlers {
-		handler.NodeAdd(newNode)
+		handler.NodeAdd(node)
 	}
 }
 
@@ -251,7 +308,14 @@ func (gp *globalPeerNotifier) Subscribe(nh datapath.NodeHandler) {
 		gp.log.WithFields(logrus.Fields{
 			"ID":       id,
 			"nodeName": node.Name,
-		}).Debug("Sending initial node info to handler")
+		}).Debug("Sending initial node info from node pools to handler")
+		nh.NodeAdd(node)
+	}
+	for _, node := range gp.localNodes {
+		gp.log.WithFields(logrus.Fields{
+			"ID":       id,
+			"nodeName": node.Name,
+		}).Debug("Sending initial node info from local cluster to handler")
 		nh.NodeAdd(node)
 	}
 }
@@ -327,25 +391,21 @@ func (gp *globalPeerNotifier) processChangeNotification(cn *peerpb.ChangeNotific
 
 	p := peertypes.FromChangeNotification(cn)
 	addr := p.Address.(*net.TCPAddr).IP.String()
+	node := types.Node{
+		Name:    path.Base(p.Name),
+		Cluster: gp.opts.ClusterName,
+		IPAddresses: []types.Address{{
+			Type: addressing.NodeExternalIP,
+			IP:   p.Address.(*net.TCPAddr).IP,
+		}},
+	}
 	switch cn.GetType() {
 	case peerpb.ChangeNotificationType_PEER_ADDED:
-		if node, ok := gp.nodes[addr]; ok {
-			// Nothing to do.
-			gp.log.WithFields(logrus.Fields{
-				"nodeAddr":    addr,
-				"nodeName":    node.Name,
-				"clusterName": node.Cluster,
-			}).Info("Node with this address already exists")
-			return
-		}
-		gp.addNode(gp.opts.ClusterName, addr)
+		gp.localNodes[addr] = node
+		gp.addNode(node)
 	case peerpb.ChangeNotificationType_PEER_DELETED:
-		if _, ok := gp.nodes[addr]; !ok {
-			// Nothing to do.
-			gp.log.WithField("nodeAddr", addr).Info("Node with this address already doesn't exist")
-			return
-		}
-		gp.removeNode(gp.opts.ClusterName, addr)
+		gp.removeNode(node)
+		delete(gp.localNodes, addr)
 	case peerpb.ChangeNotificationType_PEER_UPDATED:
 		gp.log.WithField("nodeAddr", addr).Error("Unhandled PEER_UPDATE")
 	}
