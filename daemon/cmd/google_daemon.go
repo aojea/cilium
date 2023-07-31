@@ -57,16 +57,6 @@ func (d *Daemon) initGoogleControllers(ctx context.Context, endpoints []*endpoin
 	if err != nil {
 		log.WithError(err).Fatal("Unable to create controller manager")
 	}
-	if option.Config.EnableGoogleServiceSteering {
-		crdsExist, err := servicesteering.CRDsExist(mgr.GetRESTMapper())
-		if err != nil {
-			sslog.WithError(err).Fatal("Unable to probe for service steering CRDs")
-		}
-		if !crdsExist {
-			sslog.Warn("Service steering CRDs are missing, disabling the feature")
-			option.Config.EnableGoogleServiceSteering = false
-		}
-	}
 
 	// Initialize and wait for multinic client cache to sync
 	if option.Config.EnableGoogleMultiNIC {
