@@ -3,9 +3,11 @@ package servicesteering
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
+	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/datapath/connector"
 	"github.com/cilium/cilium/pkg/endpoint"
 	"github.com/cilium/cilium/pkg/endpointmanager"
@@ -13,6 +15,7 @@ import (
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/maps/sfc"
+	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/trigger"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	daemonclient "github.com/cilium/cilium/pkg/client"
 	v1 "gke-internal.googlesource.com/anthos-networking/apis/v2/service-steering/v1"
 	networkv1 "k8s.io/cloud-provider-gcp/crd/apis/network/v1"
 )
@@ -43,6 +47,11 @@ type ServiceSteeringReconciler struct {
 	*endpointmanager.EndpointManager
 	selectorCache []extractedSelector
 	epTrigger     *trigger.Trigger
+	cp            configPatcher
+}
+
+type configPatcher interface {
+	ConfigPatch(cfg models.DaemonConfigurationSpec) error
 }
 
 type extractedSelector struct {
@@ -54,6 +63,21 @@ type extractedSelector struct {
 	portSelectors map[portSelector]struct{}
 	path          sfc.PathKey
 	serviceIP     net.IP
+}
+
+// InitDataPathOption set the option.GoogleServiceSteeringDataPath based on if PathMap is empty.
+// It must be called before endpoint regeneration on startup.
+func InitDataPathOption(ctx context.Context) error {
+	enable := !isPathMapEmpty()
+	option.Config.Opts.SetBool(option.GoogleServiceSteeringDataPath, enable)
+	sfclog.Infof("Init: Set %s to %s", option.GoogleServiceSteeringDataPath, optString(enable))
+	return nil
+}
+
+func isPathMapEmpty() bool {
+	var key *sfc.PathKey
+	err := sfc.PathMap.GetNextKey(key, &sfc.PathKey{})
+	return err == io.EOF
 }
 
 func (r *ServiceSteeringReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -70,6 +94,12 @@ func (r *ServiceSteeringReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	// Subscribe to endpoint creation, delection events.
 	r.EndpointManager.Subscribe(r)
+
+	cl, err := daemonclient.NewClient("")
+	if err != nil {
+		return fmt.Errorf("failed to create Daemon client: %v", err)
+	}
+	r.cp = cl
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.ServiceFunctionChain{}, builder.WithPredicates(predicate.NewPredicateFuncs(isValidSFC))).
@@ -90,7 +120,7 @@ func (r *ServiceSteeringReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
-func (r *ServiceSteeringReconciler) handleControllerEvent(ctx context.Context, reason string) error {
+func (r *ServiceSteeringReconciler) handleControllerEvent(ctx context.Context, reason string) (err_ error) {
 	reconcileLock.Lock()
 	defer reconcileLock.Unlock()
 
@@ -99,13 +129,25 @@ func (r *ServiceSteeringReconciler) handleControllerEvent(ctx context.Context, r
 	log.Debug("Reconciling")
 	defer log.Debugf("Finished reconciling in %s", time.Now().Sub(start))
 
+	defer func() {
+		if err_ != nil {
+			log.Error(err_)
+		}
+	}()
+
 	if err := r.updateSelectorCache(ctx, log); err != nil {
-		return fmt.Errorf("failed to update TrafficSelector cache: %v", err)
+		err_ = fmt.Errorf("failed to update TrafficSelector cache: %v", err)
+		return
 	}
 	if err := r.reconcilePathMap(ctx, log); err != nil {
-		return fmt.Errorf("failed to reconcile SFC path map: %v", err)
+		err_ = fmt.Errorf("failed to reconcile SFC path map: %v", err)
+		return
 	}
-	return nil
+	if err := r.reconcileDataPathEnablement(ctx, log); err != nil {
+		err_ = fmt.Errorf("failed to adjust data path enablement: %v", err)
+		return
+	}
+	return
 }
 
 // Only reconcile the selector maps for endpoint events
@@ -361,4 +403,31 @@ func (r *ServiceSteeringReconciler) extractNetwork(ctx context.Context, selector
 	}
 	selector.networkID = connector.GenerateNetworkID(&network)
 	return nil
+}
+
+func (r *ServiceSteeringReconciler) reconcileDataPathEnablement(ctx context.Context, log *logrus.Entry) error {
+	shouldEnable := !isPathMapEmpty()
+	existing := option.Config.Opts.IsEnabled(option.GoogleServiceSteeringDataPath)
+	if shouldEnable == existing {
+		log.Debugf("Service steering data path is already %s.", optString(existing))
+		return nil
+	}
+	cfg := models.DaemonConfigurationSpec{
+		Options: models.ConfigurationMap{
+			option.GoogleServiceSteeringDataPath: optString(shouldEnable),
+		},
+	}
+	log.Infof("Patching config to set %s to %s", option.GoogleServiceSteeringDataPath, optString(shouldEnable))
+	if err := r.cp.ConfigPatch(cfg); err != nil {
+		return fmt.Errorf("unable to change configuration: %s", err)
+	}
+	log.Infof("Set %s to %s", option.GoogleServiceSteeringDataPath, optString(shouldEnable))
+	return nil
+}
+
+func optString(enable bool) string {
+	if enable {
+		return "Enabled"
+	}
+	return "Disabled"
 }

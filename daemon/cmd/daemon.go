@@ -51,6 +51,7 @@ import (
 	nodefirewall "github.com/cilium/cilium/pkg/gke/nodefirewall/bootstrap"
 	gkeredirectservice "github.com/cilium/cilium/pkg/gke/redirectservice/controller"
 	gkeremotenode "github.com/cilium/cilium/pkg/gke/remotenode/controller"
+	"github.com/cilium/cilium/pkg/gke/servicesteering"
 	"github.com/cilium/cilium/pkg/gke/subnet"
 	gketrafficsteering "github.com/cilium/cilium/pkg/gke/trafficsteering/controller"
 	"github.com/cilium/cilium/pkg/hubble/observer"
@@ -1109,6 +1110,13 @@ func NewDaemon(ctx context.Context, cancel context.CancelFunc, epMgr *endpointma
 	if k8s.IsEnabled() && option.Config.EnableWireguard {
 		if err := gkeremotenode.Init(d.datapath.WireguardAgent(), d.ipcache); err != nil {
 			log.WithError(err).Error("Error while starting RemoteNode controller")
+			return nil, nil, err
+		}
+	}
+
+	if k8s.IsEnabled() && option.Config.EnableGoogleServiceSteering {
+		if err := servicesteering.InitDataPathOption(ctx); err != nil {
+			log.WithError(err).Error("Error while initializing service steering data path flag")
 			return nil, nil, err
 		}
 	}

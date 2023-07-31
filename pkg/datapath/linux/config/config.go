@@ -608,7 +608,6 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
 	}
 
 	if option.Config.EnableGoogleServiceSteering {
-		cDefinesMap["ENABLE_GOOGLE_SERVICE_STEERING"] = "1"
 		cDefinesMap["SFC_PATH_MAP"] = sfc.PathMapName
 		cDefinesMap["SFC_PATH_MAP_SIZE"] = strconv.Itoa(sfc.PathMaxEntries)
 		cDefinesMap["SFC_CIDR_MAP"] = sfc.CIDRMapName
