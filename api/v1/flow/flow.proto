@@ -90,6 +90,10 @@ message Flow {
     // proxy_port indicates the port of the proxy to which the flow was forwarded
     uint32 proxy_port = 29;
 
+    // CorrelatedPolicies stores the policies that match the flow.
+    // Only applicable to the cilium event type PolicyVerdict.
+    repeated Policy correlated_policies = 50;
+
     // This is a temporary workaround to support summary field for pb.Flow without
     // duplicating logic from the old parser. This field will be removed once we
     // fully migrate to the new parser.
@@ -569,6 +573,12 @@ message PolicyUpdateNotification {
     repeated string labels = 1;
     uint64 revision = 2;
     int64 rule_count = 3;
+}
+
+message Policy {
+    string kind = 1;
+    string name = 2;
+    string namespace = 3;
 }
 
 message EndpointRegenNotification {

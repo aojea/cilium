@@ -22,6 +22,7 @@ import (
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/metrics"
+	"github.com/cilium/cilium/pkg/policy/correlation"
 )
 
 var (
@@ -44,7 +45,7 @@ func NewLogger(dispatcher dispatcher.Dispatcher, endpointGetter getters.Endpoint
 	log.Infof("New policy logger")
 	n := &networkPolicyLogger{
 		dispatcher:       dispatcher,
-		policyCorrelator: &policyCorrelation{endpointGetter: endpointGetter},
+		policyCorrelator: correlation.NewPolicyCorrelator(endpointGetter),
 		endpointGetter:   endpointGetter,
 		storeGetter:      storeGetter,
 		cfg:              &defaultConfig,

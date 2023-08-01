@@ -27,6 +27,7 @@
     - [Layer7](#flow-Layer7)
     - [LostEvent](#flow-LostEvent)
     - [NetworkInterface](#flow-NetworkInterface)
+    - [Policy](#flow-Policy)
     - [PolicyUpdateNotification](#flow-PolicyUpdateNotification)
     - [SCTP](#flow-SCTP)
     - [Service](#flow-Service)
@@ -286,6 +287,7 @@ EventTypeFilter is a filter describing a particular event type
 | debug_capture_point | [DebugCapturePoint](#flow-DebugCapturePoint) |  | Only applicable to cilium debug capture events, blank for other types |
 | interface | [NetworkInterface](#flow-NetworkInterface) |  | interface is the network interface on which this flow was observed |
 | proxy_port | [uint32](#uint32) |  | proxy_port indicates the port of the proxy to which the flow was forwarded |
+| correlated_policies | [Policy](#flow-Policy) | repeated | CorrelatedPolicies stores the policies that match the flow. Only applicable to the cilium event type PolicyVerdict. |
 | Summary | [string](#string) |  | **Deprecated.** This is a temporary workaround to support summary field for pb.Flow without duplicating logic from the old parser. This field will be removed once we fully migrate to the new parser. |
 
 
@@ -528,6 +530,23 @@ that happened before the events were captured by Hubble.
 | ----- | ---- | ----- | ----------- |
 | index | [uint32](#uint32) |  |  |
 | name | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="flow-Policy"></a>
+
+### Policy
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| kind | [string](#string) |  |  |
+| name | [string](#string) |  |  |
+| namespace | [string](#string) |  |  |
 
 
 

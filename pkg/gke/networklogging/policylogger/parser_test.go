@@ -21,20 +21,10 @@ import (
 	"testing"
 
 	"github.com/cilium/cilium/api/v1/flow"
+	"github.com/cilium/cilium/pkg/policy/correlation"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
-
-var _ policyCorrelator = &fakePolicyCorrelator{}
-
-type fakePolicyCorrelator struct {
-	retPolicies []*Policy
-	retErr      error
-}
-
-func (p *fakePolicyCorrelator) correlatePolicy(_ *flow.Flow) ([]*Policy, error) {
-	return p.retPolicies, p.retErr
-}
 
 func TestIsNodeTraffic(t *testing.T) {
 	tests := []struct {
@@ -98,17 +88,21 @@ func TestIsNodeTraffic(t *testing.T) {
 }
 
 func TestNetworkPolicyLogger_flowToPolicyActionLogEntry(t *testing.T) {
+	correlator := correlation.NewFakePolicyCorrelator(
+		correlation.WithEntry("flow", correlation.NewFakePolicyCorrelatorResult()),
+	)
 	tests := []struct {
 		name       string
-		correlator *fakePolicyCorrelator
+		correlator correlation.Correlator
 		flow       *flow.Flow
 		want       *PolicyActionLogEntry
 		wantErr    bool
 	}{
 		{
 			name:       "pod-to-pod allow tcp ingress",
-			correlator: &fakePolicyCorrelator{},
+			correlator: correlator,
 			flow: &flow.Flow{
+				Uuid:             "flow",
 				Verdict:          flow.Verdict_FORWARDED,
 				TrafficDirection: flow.TrafficDirection_INGRESS,
 				IP: &flow.IP{
@@ -169,8 +163,9 @@ func TestNetworkPolicyLogger_flowToPolicyActionLogEntry(t *testing.T) {
 		},
 		{
 			name:       "node-to-pod allow icmp egress",
-			correlator: &fakePolicyCorrelator{},
+			correlator: correlator,
 			flow: &flow.Flow{
+				Uuid:             "flow",
 				Verdict:          flow.Verdict_FORWARDED,
 				TrafficDirection: flow.TrafficDirection_EGRESS,
 				IP: &flow.IP{
@@ -217,8 +212,9 @@ func TestNetworkPolicyLogger_flowToPolicyActionLogEntry(t *testing.T) {
 		},
 		{
 			name:       "node-to-node deny udp ingress",
-			correlator: &fakePolicyCorrelator{},
+			correlator: correlator,
 			flow: &flow.Flow{
+				Uuid:             "flow",
 				Verdict:          flow.Verdict_DROPPED,
 				TrafficDirection: flow.TrafficDirection_INGRESS,
 				IP: &flow.IP{
