@@ -149,12 +149,15 @@ var (
 				},
 			},
 		},
-		Type:                  flow.FlowType_L3_L4,
-		NodeName:              "gke-demo-default-pool-e8df3298-412p",
-		Reply:                 false,
-		EventType:             &flow.CiliumEventType{Type: int32(api.MessageTypePolicyVerdict)},
-		TrafficDirection:      flow.TrafficDirection_INGRESS,
-		PolicyMatchType:       api.PolicyMatchL3L4,
+		Type:             flow.FlowType_L3_L4,
+		NodeName:         "gke-demo-default-pool-e8df3298-412p",
+		Reply:            false,
+		EventType:        &flow.CiliumEventType{Type: int32(api.MessageTypePolicyVerdict)},
+		TrafficDirection: flow.TrafficDirection_INGRESS,
+		PolicyMatchType:  api.PolicyMatchL3L4,
+		CorrelatedPolicies: []*flow.Policy{
+			{Kind: "NetworkPolicy", Name: "np", Namespace: "default"},
+		},
 		TraceObservationPoint: flow.TraceObservationPoint_UNKNOWN_POINT,
 	}
 
@@ -1090,4 +1093,38 @@ func TestLogger_DontLogUncorrelatedEntries(t *testing.T) {
 
 	observer.OnDecodedFlow(context.Background(), allowFlow)
 	retryCheckFileContent(t, fp, "", maxRetry)
+}
+
+func TestLogger_HubbleCorrelationEnabled(t *testing.T) {
+	cfg := testCfg
+	configFilePath := setupConfig(t, &cfg)
+
+	dpatcher := dispatcher.NewDispatcher()
+	observer := dpatcher.(dispatcher.Observer)
+	logger := &networkPolicyLogger{
+		dispatcher: dpatcher,
+		// Noop correlator signals that the correlated policies are inherited from the flow.
+		policyCorrelator:        &correlation.NoopCorrelator,
+		storeGetter:             &testStoreGetter{},
+		spec:                    getLogSpec(nil),
+		configFilePath:          configFilePath,
+		hubblePolicyCorrelation: true,
+	}
+	err, cb := logger.Start()
+	if err != nil {
+		t.Fatalf("Unexpected error returned by logger.Start(): %v", err)
+	}
+	cb()
+
+	defer logger.Stop()
+	fp := path.Join(logger.cfg.logFilePath, logger.cfg.logFileName)
+
+	spec := v1alpha1.NetworkLoggingSpec{
+		Cluster: v1alpha1.ClusterLogSpec{Allow: v1alpha1.LogAction{Log: true}},
+		Node:    v1alpha1.NodeLogSpec{Allow: v1alpha1.LogAction{Log: true}},
+	}
+	logger.UpdateLoggingSpec(&spec)
+
+	observer.OnDecodedFlow(context.Background(), allowFlow)
+	retryCheckFileContent(t, fp, allowLog, maxRetry)
 }

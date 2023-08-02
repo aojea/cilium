@@ -40,8 +40,14 @@ type Logger interface {
 	Stop()
 }
 
+func WithHubblePolicyCorrelation(v bool) func(*networkPolicyLogger) {
+	return func(n *networkPolicyLogger) {
+		n.hubblePolicyCorrelation = v
+	}
+}
+
 // NewLogger create a new network policy logger.
-func NewLogger(dispatcher dispatcher.Dispatcher, endpointGetter getters.EndpointGetter, storeGetter getters.StoreGetter) Logger {
+func NewLogger(dispatcher dispatcher.Dispatcher, endpointGetter getters.EndpointGetter, storeGetter getters.StoreGetter, opts ...func(*networkPolicyLogger)) Logger {
 	log.Infof("New policy logger")
 	n := &networkPolicyLogger{
 		dispatcher:       dispatcher,
@@ -52,6 +58,11 @@ func NewLogger(dispatcher dispatcher.Dispatcher, endpointGetter getters.Endpoint
 		spec:             getLogSpec(nil),
 		configFilePath:   configFile,
 	}
+
+	for _, opt := range opts {
+		opt(n)
+	}
+
 	metrics.MustRegister(metricsCollectors()...)
 	policyLoggingReady.Set(0)
 	return n

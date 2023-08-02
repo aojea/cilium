@@ -126,6 +126,12 @@ func (n *networkPolicyLogger) flowToPolicyActionLogEntry(f *flow.Flow) (*PolicyA
 		return &entry, nil
 	}
 
+	// If correlation is enabled, this has already been performed on the flow object.
+	if n.hubblePolicyCorrelation {
+		entry.Policies = f.CorrelatedPolicies
+		return &entry, nil
+	}
+
 	if policies, err := n.policyCorrelator.Correlate(f); err != nil {
 		return nil, err
 	} else {

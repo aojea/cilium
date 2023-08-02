@@ -79,6 +79,9 @@ type networkPolicyLogger struct {
 	cfg              *policyLoggerConfig
 	configFilePath   string
 
+	// hubblePolicyCorrelation signals that correlation has been performed on the flow object.
+	hubblePolicyCorrelation bool
+
 	lock lock.Mutex
 	spec *logSpec
 }

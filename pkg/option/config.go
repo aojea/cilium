@@ -249,6 +249,9 @@ const (
 	// EnableNodeNetworkPolicyCRD enables google node network policy CRD.
 	EnableNodeNetworkPolicyCRD = "enable-node-network-policy-crd"
 
+	// EnableHubbleCorrelatePolicies enables policy correlation for hubble flows.
+	EnableHubbleCorrelatePolicies = "enable-hubble-correlate-policies"
+
 	// DisablePodToRemoteNodeTunneling disables tunneling for all traffic to the
 	// remote nodes.
 	DisablePodToRemoteNodeTunneling = "disable-pod-to-remote-node-tunneling"
@@ -2262,6 +2265,9 @@ type DaemonConfig struct {
 	// EnableHubbleRecorderAPI specifies if the Hubble Recorder API should be served
 	EnableHubbleRecorderAPI bool
 
+	// EnableHubbleCorrelatePolicies specifies whether to enable policy correlation.
+	EnableHubbleCorrelatePolicies bool
+
 	// HubbleRecorderStoragePath specifies the directory in which pcap files
 	// created via the Hubble Recorder API are stored
 	HubbleRecorderStoragePath string
@@ -2535,6 +2541,8 @@ var (
 
 		EnableNodeNetworkPolicyCRD:    defaults.EnableNodeNetworkPolicyCRD,
 		EnableMergeCIDRPrefixIPLabels: defaults.EnableMergeCIDRPrefixIPLabels,
+
+		EnableHubbleCorrelatePolicies: defaults.EnableHubbleCorrelatePolicies,
 	}
 )
 
@@ -3547,6 +3555,7 @@ func (c *DaemonConfig) Populate() {
 	c.BypassIPAvailabilityUponRestore = viper.GetBool(BypassIPAvailabilityUponRestore)
 	c.EnableK8sTerminatingEndpoint = viper.GetBool(EnableK8sTerminatingEndpoint)
 	c.EnableStaleCiliumEndpointCleanup = viper.GetBool(EnableStaleCiliumEndpointCleanup)
+	c.EnableHubbleCorrelatePolicies = viper.GetBool(EnableHubbleCorrelatePolicies)
 
 	c.K8sInterfaceOnly = viper.GetBool(K8sInterfaceOnly)
 	c.DisablePodToRemoteNodeTunneling = viper.GetBool(DisablePodToRemoteNodeTunneling)

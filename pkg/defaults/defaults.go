@@ -519,4 +519,7 @@ const (
 	// EnableMergeCIDRPrefixIPLabels controls whether to merge labels for CIDR
 	// prefix IPs.
 	EnableMergeCIDRPrefixIPLabels = true
+
+	// EnableHubbleCorrelatePolicies controls whether to correlate policies for hubble flows.
+	EnableHubbleCorrelatePolicies = false
 )

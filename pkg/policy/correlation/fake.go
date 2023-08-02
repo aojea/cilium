@@ -8,6 +8,17 @@ import (
 )
 
 var _ Correlator = (*FakePolicyCorrelator)(nil)
+var _ Correlator = (*NoopPolicyCorrelator)(nil)
+
+var NoopCorrelator = NoopPolicyCorrelator{}
+
+// NoopPolicyCorrelator is a correlator that returns nil.
+type NoopPolicyCorrelator struct{}
+
+// Correlate always returns nil.
+func (c *NoopPolicyCorrelator) Correlate(f *flow.Flow) ([]*flow.Policy, error) {
+	return nil, nil
+}
 
 // NewFakePolicyCorrelator returns a fake correlator for unit testing.
 func NewFakePolicyCorrelator(opts ...func(*FakePolicyCorrelator)) *FakePolicyCorrelator {
@@ -64,11 +75,11 @@ type FakePolicyCorrelator struct {
 }
 
 // Correlate correlates forwarded flows based on the flow UUID.
-func (p *FakePolicyCorrelator) Correlate(f *flow.Flow) ([]*flow.Policy, error) {
+func (c *FakePolicyCorrelator) Correlate(f *flow.Flow) ([]*flow.Policy, error) {
 	if !api.IsFlowAllowed(f) {
 		return nil, nil
 	}
-	v, ok := p.m[f.Uuid]
+	v, ok := c.m[f.Uuid]
 	if !ok {
 		return nil, fmt.Errorf("Test error: key not found for flow uuid %s", f.Uuid)
 	}

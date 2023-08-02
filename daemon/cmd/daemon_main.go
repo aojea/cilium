@@ -1228,6 +1228,10 @@ func initializeFlags() {
 	flags.Bool(option.EnableTransparentHealthChecks, false, "Enable Google LB health checks to pods to be answered by K8s status watcher")
 	option.BindEnv(option.EnableTransparentHealthChecks)
 
+	flags.Bool(option.EnableHubbleCorrelatePolicies, defaults.EnableHubbleCorrelatePolicies, "EnableHubbleCorrelatePolicies controls whether to correlate policies for flows")
+	flags.MarkHidden(option.EnableHubbleCorrelatePolicies)
+	option.BindEnv(option.EnableHubbleCorrelatePolicies)
+
 	flags.Bool(option.EnableMergeCIDRPrefixIPLabels, defaults.EnableMergeCIDRPrefixIPLabels, "EnableMergeCIDRPrefixIPLabels controls whether to merge labels for CIDR prefix IPs")
 	flags.MarkHidden(option.EnableMergeCIDRPrefixIPLabels)
 	option.BindEnv(option.EnableMergeCIDRPrefixIPLabels)

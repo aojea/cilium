@@ -20,6 +20,7 @@ import (
 	"github.com/cilium/cilium/pkg/hubble/parser/seven"
 	"github.com/cilium/cilium/pkg/hubble/parser/threefour"
 	monitorAPI "github.com/cilium/cilium/pkg/monitor/api"
+	"github.com/cilium/cilium/pkg/policy/correlation"
 	"github.com/cilium/cilium/pkg/proxy/accesslog"
 )
 
@@ -39,10 +40,11 @@ func New(
 	ipGetter getters.IPGetter,
 	serviceGetter getters.ServiceGetter,
 	linkGetter getters.LinkGetter,
+	correlator correlation.Correlator,
 	opts ...options.Option,
 ) (*Parser, error) {
 
-	l34, err := threefour.New(log, endpointGetter, identityGetter, dnsGetter, ipGetter, serviceGetter, linkGetter)
+	l34, err := threefour.New(log, endpointGetter, identityGetter, dnsGetter, ipGetter, serviceGetter, linkGetter, correlator)
 	if err != nil {
 		return nil, err
 	}
