@@ -44,7 +44,7 @@ gcloud auth configure-docker
 # Build and push cilium to local registry at
 echo "Making Cilium images for current build and push to local registry: ${IMAGE_REGISTRY}"
 
-make LOCKDEBUG=1 DOCKER_REGISTRY="${IMAGE_REGISTRY}" DOCKER_IMAGE_TAG="${SHA}" docker-cilium-image
+make LOCKDEBUG=1 DOCKER_REGISTRY="${IMAGE_REGISTRY}" DOCKER_IMAGE_TAG="${SHA}" docker-cilium-dpv2-image
 docker push "${IMAGE_REGISTRY}/${CILIUM_TAG}:${SHA}"
 
 make -B LOCKDEBUG=1 DOCKER_REGISTRY="${IMAGE_REGISTRY}" DOCKER_IMAGE_TAG="${SHA}" docker-operator-image
