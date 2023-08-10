@@ -9,7 +9,7 @@ ARG CILIUM_RUNTIME_IMAGE=quay.io/cilium/cilium-runtime:4aaee59d84ed83e5f350c27cb
 # Specify Hubble version inside Cilium image for Google builds.
 # Try to keep in sync with OSS specs in images/cilium/download-hubble.sh;
 # or images/cilium/hubble-version.sh in older versions.
-ARG HUBBLE_CLI_IMAGE=gcr.io/gke-release-staging/cilium/hubble-cli:v0.11.6-gke.0@sha256:bb9733fb92705f1527e502ff81ce7fa7a45bad766323713179c3778c1c3a1715
+ARG HUBBLE_CLI_IMAGE=gcr.io/gke-release-staging/cilium/hubble-cli:v0.11.6-gke.1@sha256:fec169db7558f22feb33646a0ac1e2d6cf8d311fa13bfe2034dea31f306c31d4
 
 
 # cilium-envoy from github.com/cilium/proxy
