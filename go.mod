@@ -88,7 +88,7 @@ require (
 	golang.org/x/net v0.9.0
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.7.0
-	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8
+	golang.org/x/time v0.3.0
 	golang.org/x/tools v0.7.0
 	golang.zx2c4.com/wireguard v0.0.0-20211017052713-f87e87af0d9a
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20211027115401-c9b1ec1aa6d8
@@ -99,10 +99,11 @@ require (
 	gopkg.in/ini.v1 v1.66.6
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.27.1
-	k8s.io/apiextensions-apiserver v0.26.0
+	k8s.io/apiextensions-apiserver v0.26.1
 	k8s.io/apimachinery v0.27.1
 	k8s.io/client-go v0.27.1
-	k8s.io/code-generator v0.26.0
+	k8s.io/cloud-provider-gcp/crd v0.0.0-20230512124302-67d1fd9f7255
+	k8s.io/code-generator v0.26.7
 	k8s.io/klog/v2 v2.90.1
 	k8s.io/kube-openapi v0.0.0-20230308215209-15aac26d736a
 	k8s.io/utils v0.0.0-20230209194617-a36077c30491
@@ -143,6 +144,7 @@ require (
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.6.2 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
+	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/go-kit/kit v0.12.0 // indirect
 	github.com/go-kit/log v0.2.0 // indirect
@@ -214,7 +216,7 @@ require (
 	gitlab.com/golang-commonmark/puny v0.0.0-20191124015043-9f83538fa04f // indirect
 	go.mongodb.org/mongo-driver v1.8.3 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
-	go.uber.org/zap v1.19.1 // indirect
+	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/mod v0.9.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5 // indirect
 	golang.org/x/term v0.7.0 // indirect
@@ -224,7 +226,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/component-base v0.26.0 // indirect
+	k8s.io/component-base v0.26.1 // indirect
 	k8s.io/gengo v0.0.0-20220902162205-c0856e24416d // indirect
 	sigs.k8s.io/gateway-api v0.6.2 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
@@ -235,20 +237,16 @@ require (
 	// GKE specific dependencies.
 	gke-internal.googlesource.com/anthos-networking/apis/v2 v2.0.0-00010101000000-000000000000
 	gke-internal/gke-node-firewall v0.0.0-00010101000000-000000000000
-	// k8s.io/cloud-provider-gcp/crd v0.0.0-20230414153241-658d4df496a9
-	k8s.io/cloud-provider-gcp/crd v0.0.0-20230512124302-67d1fd9f7255
 	k8s.io/klog v1.0.0
 	k8s.io/kubelet v0.23.0
-	sigs.k8s.io/controller-runtime v0.12.1
+	sigs.k8s.io/controller-runtime v0.14.6
 )
 
 replace (
 	gke-internal.googlesource.com/anthos-networking/apis/v2 => gke-internal.googlesource.com/anthos-networking.git/apis/v2 v2.6.0-gke.0.0.20230713224147-c9e72075b272
 	gke-internal/gke-node-firewall => gke-internal.googlesource.com/kubernetes/gke-node-firewall.git v0.0.20
-	k8s.io/api => k8s.io/api v0.25.12
-	k8s.io/apimachinery => k8s.io/apimachinery v0.25.12
-	k8s.io/client-go => k8s.io/client-go v0.25.12
-	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20230109183929-3758b55a6596
+	k8s.io/api => k8s.io/api v0.26.7
+	k8s.io/client-go => k8s.io/client-go v0.26.7
 )
 
 replace (
